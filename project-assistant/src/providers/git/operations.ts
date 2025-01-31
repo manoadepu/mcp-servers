@@ -153,46 +153,20 @@ export class GitOperations {
         excludeFolders: excludePaths
       });
 
-      // Check if this is the first commit
-      let isFirstCommit = false;
-      try {
-        await this.git.raw(['rev-parse', `${hash}^`]);
-      } catch (error) {
-        console.error('This appears to be the first commit');
-        isFirstCommit = true;
-      }
+      // Prepare exclude paths for git command
+      const excludeArgs = excludePaths.map(path => `:^${path}`);
 
-      // Get list of changed files, excluding specified paths
-      const fileList = await this.git.raw([
-        'diff-tree',
-        '--no-commit-id',
-        '--name-only',
-        '-r',  // Recursive
-        '--root',  // Show the full diff including first commit
-        hash,
-        '--',  // Start of pathspec
-        '.',  // Include all files
-        ...excludePaths.map(path => `:^${path}`)  // Exclude specified paths
-      ]);
-      console.error('Got file list:', fileList);
-
-      if (!fileList || !fileList.trim()) {
-        console.error('No changes found in commit');
-        return { files: [], total: { changes: 0, insertions: 0, deletions: 0, files: 0 } };
-      }
-
-      // Split files into array
-      const filteredFiles = fileList.trim().split('\n').filter(Boolean);
-
-      // For first commit, use show instead of diff
+      // Get numstat directly with exclusions
       const stats = await this.git.raw([
         'show',
         '--numstat',  // Get number stats
         '--pretty=',  // No commit info, just stats
         '--no-renames',  // Don't show renames as delete+add
-        hash  // The commit
+        hash,  // The commit
+        '--',  // Start of pathspec
+        '.',  // Include all files
+        ...excludeArgs  // Exclude specified paths
       ]);
-      console.error('Got stats:', stats);
 
       if (!stats || !stats.trim()) {
         console.error('No changes found in commit');
@@ -203,11 +177,7 @@ export class GitOperations {
       const fileChanges = stats
         .trim()
         .split('\n')
-        .filter(line => {
-          if (!line) return false;
-          const [,, file] = line.split('\t');
-          return file && !excludePaths.some(exclude => file.startsWith(exclude));
-        })
+        .filter(Boolean)
         .map(line => {
           const [insertions = '0', deletions = '0', file = ''] = line.split('\t');
           const binary = insertions === '-' && deletions === '-';
