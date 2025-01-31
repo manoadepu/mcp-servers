@@ -53,38 +53,68 @@ export const analyzeCommitTool: McpToolHandler = {
       repoPath: {
         type: 'string',
         description: 'Path to Git repository'
+      },
+      excludeFolders: {
+        type: 'array',
+        description: 'Folders to exclude from analysis (e.g., ["node_modules", "dist"])',
+        optional: true
       }
     },
     required: ['commitId', 'repoPath']
   },
   handler: async (params: Record<string, any>) => {
-    const typedParams = params as CommitToolParams;
-    const { commitId, repoPath } = typedParams;
-    
-    const config: GitProviderConfig = {
-      type: 'git',
-      workingDir: repoPath,
-      gitPath: 'git'
-    };
-    
-    const provider = new GitProvider(config);
-    
     try {
+      const typedParams = params as CommitToolParams & { excludeFolders?: string | string[] };
+      const { commitId, repoPath } = typedParams;
+      console.error('Analyzing commit:', commitId, 'in repo:', repoPath);
+      console.error('Raw excludeFolders:', JSON.stringify(params.excludeFolders));
+    let excludeFolders;
+    try {
+      if (typeof params.excludeFolders === 'string') {
+        excludeFolders = JSON.parse(params.excludeFolders);
+      } else {
+        excludeFolders = params.excludeFolders;
+      }
+    } catch (e) {
+      excludeFolders = params.excludeFolders;
+    }
+    excludeFolders = Array.isArray(excludeFolders) ? excludeFolders : excludeFolders ? [excludeFolders] : ['node_modules'];
+    console.error('Processed excludeFolders:', JSON.stringify(excludeFolders));
+    
+      const config: GitProviderConfig = {
+        type: 'git',
+        workingDir: repoPath,
+        gitPath: 'git'
+      };
+      
+      console.error('Initializing Git provider with config:', JSON.stringify(config));
+      const provider = new GitProvider(config);
+      
+      console.error('Getting repository info...');
       const repo = await provider.getRepository(repoPath);
+      
+      console.error('Getting commit info...');
       const commit = await provider.getCommit(repo, commitId);
-      const analysis = await provider.analyzeCommit(commit);
+      
+      console.error('Starting commit analysis...');
+      const analysis = await provider.analyzeCommit(commit, excludeFolders || ['node_modules']);
+      console.error('Analysis complete');
       
       return {
         type: 'success',
-        data: analysis
+        data: {
+          ...analysis,
+          modifiedFiles: analysis.modifiedFiles
+        }
       };
     } catch (error) {
+      console.error('Error in git/analyze/commit:', error);
       return {
         type: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? 
+          `Git analysis error: ${error.message}` : 
+          'Unknown error during git analysis'
       };
-    } finally {
-      provider.dispose();
     }
   }
 };

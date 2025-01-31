@@ -1,5 +1,5 @@
 import { BaseProvider } from '../../core/providers/base';
-import { GitProviderConfig, GitCapability } from './types';
+import { GitProviderConfig, GitCapability, ExtendedChangeAnalysis } from './types';
 import type { Repository, Branch, Commit, CommitAnalysis, ChangeAnalysis, HistoryOptions } from '../../core/providers';
 /**
  * Git provider implementation
@@ -16,7 +16,9 @@ export declare class GitProvider extends BaseProvider {
     getBranches(repo: Repository): Promise<Branch[]>;
     getCommit(repo: Repository, commitId: string): Promise<Commit>;
     getCommitHistory(repo: Repository, options: HistoryOptions): Promise<Commit[]>;
-    getChanges(commit: Commit): Promise<ChangeAnalysis>;
-    analyzeCommit(commit: Commit): Promise<CommitAnalysis>;
+    getChanges(commit: Commit, excludeFolders?: string | string[] | undefined): Promise<ExtendedChangeAnalysis>;
+    analyzeCommit(commit: Commit, excludeFolders?: string | string[] | undefined): Promise<CommitAnalysis & {
+        modifiedFiles: string[];
+    }>;
     analyzeChanges(changes: ChangeAnalysis): Promise<CommitAnalysis>;
 }

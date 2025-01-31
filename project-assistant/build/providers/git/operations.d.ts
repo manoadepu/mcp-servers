@@ -5,6 +5,10 @@ export declare class GitOperations {
     private git;
     constructor(workingDir: string, gitPath?: string);
     /**
+     * Verify repository
+     */
+    private verifyRepository;
+    /**
      * Initialize repository
      * @param bare Create bare repository
      */
@@ -40,7 +44,7 @@ export declare class GitOperations {
      * Get commit changes
      * @param hash Commit hash
      */
-    getCommitChanges(hash: string): Promise<{
+    getCommitChanges(hash: string, excludePaths?: string[]): Promise<{
         files: Array<{
             file: string;
             changes: number;

@@ -38,17 +38,41 @@ export interface GitFileAnalysis {
     path: string;
     type: 'added' | 'modified' | 'deleted' | 'renamed';
     oldPath?: string;
-    complexity: {
-        before?: ComplexityMetrics;
-        after?: ComplexityMetrics;
-        delta: number;
-    };
+    complexity: ComplexityMetrics;
     impact: {
         score: number;
         level: 'low' | 'medium' | 'high';
         factors: string[];
     };
+    riskScore: number;
     suggestions: string[];
+}
+/**
+ * Change analysis
+ */
+export interface ChangeAnalysis {
+    files: GitFileAnalysis[];
+    summary: {
+        totalFiles: number;
+        riskLevel: 'high' | 'medium' | 'low';
+        mainIssues: string[];
+    };
+}
+/**
+ * Extended change analysis
+ */
+export interface ExtendedChangeAnalysis extends ChangeAnalysis {
+    modifiedFiles: string[];
+}
+/**
+ * Detailed file analysis
+ */
+export interface DetailedFileAnalysis extends GitFileAnalysis {
+    detailedComplexity: {
+        before: ComplexityMetrics;
+        after: ComplexityMetrics;
+        delta: number;
+    };
 }
 /**
  * Git repository status

@@ -14,13 +14,32 @@ class GitOperations {
     constructor(workingDir, gitPath) {
         // Normalize path to use forward slashes
         const normalizedDir = workingDir.replace(/\\/g, '/');
+        console.error('Initializing git operations with directory:', normalizedDir);
         const options = {
             baseDir: normalizedDir,
-            binary: gitPath,
+            binary: gitPath || 'git',
             maxConcurrentProcesses: 6,
             trimmed: true
         };
-        this.git = (0, simple_git_1.default)(options);
+        try {
+            this.git = (0, simple_git_1.default)(options);
+        }
+        catch (error) {
+            console.error('Error initializing git:', error);
+            throw this.handleError(error, 'constructor');
+        }
+    }
+    /**
+     * Verify repository
+     */
+    async verifyRepository() {
+        try {
+            await this.git.revparse(['--git-dir']);
+        }
+        catch (error) {
+            console.error('Repository verification failed:', error);
+            throw this.handleError(error, 'verifyRepository');
+        }
     }
     /**
      * Initialize repository
@@ -70,11 +89,14 @@ class GitOperations {
      */
     async getCommit(hash) {
         try {
+            await this.verifyRepository();
+            console.error('Fetching commit:', hash);
             const log = await this.git.show([
                 '--no-patch',
                 '--format=%H%n%s%n%an%n%ae%n%ai%n%D',
                 hash
             ]);
+            console.error('Got commit log');
             const [hash_, message, author_name, author_email, date, refs] = log
                 .trim()
                 .split('\n');
@@ -95,21 +117,67 @@ class GitOperations {
      * Get commit changes
      * @param hash Commit hash
      */
-    async getCommitChanges(hash) {
+    async getCommitChanges(hash, excludePaths = ['node_modules']) {
         try {
-            const stats = await this.git.raw([
+            await this.verifyRepository();
+            console.error('Analysis parameters:', {
+                commitHash: hash,
+                repoPath: this.git.cwd,
+                excludeFolders: excludePaths
+            });
+            // Check if this is the first commit
+            let isFirstCommit = false;
+            try {
+                await this.git.raw(['rev-parse', `${hash}^`]);
+            }
+            catch (error) {
+                console.error('This appears to be the first commit');
+                isFirstCommit = true;
+            }
+            // Get list of changed files, excluding specified paths
+            const fileList = await this.git.raw([
                 'diff-tree',
                 '--no-commit-id',
-                '--numstat',
-                '-r',
-                hash
+                '--name-only',
+                '-r', // Recursive
+                '--root', // Show the full diff including first commit
+                hash,
+                '--', // Start of pathspec
+                '.', // Include all files
+                ...excludePaths.map(path => `:^${path}`) // Exclude specified paths
             ]);
-            const files = stats
+            console.error('Got file list:', fileList);
+            if (!fileList || !fileList.trim()) {
+                console.error('No changes found in commit');
+                return { files: [], total: { changes: 0, insertions: 0, deletions: 0, files: 0 } };
+            }
+            // Split files into array
+            const filteredFiles = fileList.trim().split('\n').filter(Boolean);
+            // For first commit, use show instead of diff
+            const stats = await this.git.raw([
+                'show',
+                '--numstat', // Get number stats
+                '--pretty=', // No commit info, just stats
+                '--no-renames', // Don't show renames as delete+add
+                hash // The commit
+            ]);
+            console.error('Got stats:', stats);
+            if (!stats || !stats.trim()) {
+                console.error('No changes found in commit');
+                return { files: [], total: { changes: 0, insertions: 0, deletions: 0, files: 0 } };
+            }
+            // Process tab-delimited output
+            const fileChanges = stats
                 .trim()
                 .split('\n')
-                .filter((line) => Boolean(line))
-                .map((line) => {
-                const [insertions, deletions, file] = line.split('\t');
+                .filter(line => {
+                if (!line)
+                    return false;
+                const [, , file] = line.split('\t');
+                return file && !excludePaths.some(exclude => file.startsWith(exclude));
+            })
+                .map(line => {
+                const [insertions = '0', deletions = '0', file = ''] = line.split('\t');
                 const binary = insertions === '-' && deletions === '-';
                 return {
                     file,
@@ -119,13 +187,13 @@ class GitOperations {
                     binary
                 };
             });
-            const total = files.reduce((acc, file) => ({
+            const total = fileChanges.reduce((acc, file) => ({
                 changes: acc.changes + file.changes,
                 insertions: acc.insertions + file.insertions,
                 deletions: acc.deletions + file.deletions,
                 files: acc.files + 1
             }), { changes: 0, insertions: 0, deletions: 0, files: 0 });
-            return { files, total };
+            return { files: fileChanges, total };
         }
         catch (error) {
             throw this.handleError(error, 'getCommitChanges');
@@ -138,7 +206,34 @@ class GitOperations {
      */
     async getFileAtCommit(hash, path) {
         try {
-            return await this.git.show([`${hash}:${path}`]);
+            await this.verifyRepository();
+            console.error(`Getting file ${path} at commit ${hash}`);
+            // Try to get file content, handle case where file doesn't exist in commit
+            try {
+                const content = await this.git.show([`${hash}:${path}`]);
+                console.error('Successfully retrieved file content');
+                return content;
+            }
+            catch (error) {
+                console.error('Error getting file at commit:', error);
+                const stderr = error?.git?.stderr || '';
+                // Handle various cases where file doesn't exist
+                if (stderr.includes('exists on disk, but not in') ||
+                    stderr.includes('does not exist') ||
+                    stderr.includes('bad object')) {
+                    console.error('File does not exist in commit, returning empty content');
+                    return '';
+                }
+                // For other errors, check if it's the first commit
+                try {
+                    await this.git.raw(['rev-parse', `${hash}^`]);
+                }
+                catch (parentError) {
+                    console.error('No parent commit exists, returning empty content');
+                    return '';
+                }
+                throw error;
+            }
         }
         catch (error) {
             throw this.handleError(error, 'getFileAtCommit');

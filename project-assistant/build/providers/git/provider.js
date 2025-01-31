@@ -102,61 +102,81 @@ class GitProvider extends base_1.BaseProvider {
             }
         }));
     }
-    async getChanges(commit) {
-        const changes = await this.operations.getCommitChanges(commit.id);
-        const analyzedFiles = await Promise.all(changes.files.map(async (file) => {
+    async getChanges(commit, excludeFolders = ['node_modules']) {
+        const excludeFoldersArray = excludeFolders ?
+            (Array.isArray(excludeFolders) ? excludeFolders : [excludeFolders]) :
+            ['node_modules'];
+        const changes = await this.operations.getCommitChanges(commit.id, excludeFoldersArray);
+        // Get only JS/TS files
+        const modifiedFiles = changes.files
+            .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
+            .map(file => file.file);
+        console.error('Analyzing files:', modifiedFiles);
+        const analyzedFiles = await Promise.all(modifiedFiles
+            .map(async (filePath) => {
             try {
-                // Get file content
-                const content = await this.operations.getFileAtCommit(commit.id, file.file);
-                // Only analyze TypeScript/JavaScript files
-                if (!file.file.match(/\.(ts|js|tsx|jsx)$/)) {
-                    return {
-                        path: file.file,
-                        type: 'modified',
-                        complexity: {
-                            cyclomatic: 0,
-                            cognitive: 0
-                        },
-                        riskScore: 0,
-                        suggestions: ['Non-TypeScript/JavaScript file - skipping analysis']
-                    };
+                // Get file content after the commit
+                const contentAfter = await this.operations.getFileAtCommit(commit.id, filePath);
+                let contentBefore = '';
+                try {
+                    // Try to get content before commit, use empty string if file didn't exist
+                    contentBefore = await this.operations.getFileAtCommit(commit.id + '^', filePath);
                 }
-                // Analyze complexity
-                const metrics = this.analyzer.analyze(content);
-                console.error(`Analyzed ${file.file}: cyclomatic=${metrics.cyclomatic}, cognitive=${metrics.cognitive}`);
+                catch (error) {
+                    // File is likely new, use empty content for "before" state
+                    contentBefore = '';
+                }
+                // Analyze complexity before and after
+                const metricsBefore = contentBefore ? this.analyzer.analyze(contentBefore) : { cyclomatic: 0, cognitive: 0, maintainability: 100 };
+                const metricsAfter = this.analyzer.analyze(contentAfter);
+                console.error(`Analyzed ${filePath}: Before - cyclomatic=${metricsBefore.cyclomatic}, cognitive=${metricsBefore.cognitive}, After - cyclomatic=${metricsAfter.cyclomatic}, cognitive=${metricsAfter.cognitive}`);
                 // Calculate risk score based on complexity
-                const riskScore = Math.min(100, ((metrics.cyclomatic / 10) + (metrics.cognitive / 15)) * 50);
+                const riskScore = Math.min(100, ((metricsAfter.cyclomatic / 10) + (metricsAfter.cognitive / 15)) * 50);
                 // Generate suggestions
                 const suggestions = [];
-                if (metrics.cyclomatic > 10) {
+                if (metricsAfter.cyclomatic > 10) {
                     suggestions.push('Consider breaking down complex logic');
                 }
-                if (metrics.cognitive > 15) {
+                if (metricsAfter.cognitive > 15) {
                     suggestions.push('High cognitive load - simplify code structure');
                 }
-                if (metrics.maintainability && metrics.maintainability < 50) {
+                if (metricsAfter.maintainability && metricsAfter.maintainability < 50) {
                     suggestions.push('Low maintainability - needs refactoring');
                 }
                 return {
-                    path: file.file,
+                    path: filePath,
                     type: 'modified',
-                    complexity: {
-                        cyclomatic: metrics.cyclomatic,
-                        cognitive: metrics.cognitive
+                    complexity: metricsAfter,
+                    detailedComplexity: {
+                        before: metricsBefore,
+                        after: metricsAfter,
+                        delta: metricsAfter.cyclomatic - metricsBefore.cyclomatic
+                    },
+                    impact: {
+                        score: riskScore,
+                        level: riskScore > 70 ? 'high' : riskScore > 40 ? 'medium' : 'low',
+                        factors: []
                     },
                     riskScore,
                     suggestions
                 };
             }
             catch (error) {
-                console.error(`Error analyzing ${file.file}:`, error);
+                console.error(`Error analyzing ${filePath}:`, error);
                 // Return default metrics if file analysis fails
                 return {
-                    path: file.file,
+                    path: filePath,
                     type: 'modified',
-                    complexity: {
-                        cyclomatic: 0,
-                        cognitive: 0
+                    complexity: { cyclomatic: 0, cognitive: 0 },
+                    detailedComplexity: {
+                        before: { cyclomatic: 0, cognitive: 0 },
+                        after: { cyclomatic: 0, cognitive: 0 },
+                        delta: 0
+                    },
+                    impact: {
+                        score: 0,
+                        level: 'low',
+                        factors: []
                     },
                     riskScore: 0,
                     suggestions: ['Error analyzing file']
@@ -181,22 +201,35 @@ class GitProvider extends base_1.BaseProvider {
             files: analyzedFiles,
             summary: {
                 totalFiles: changes.total.files,
-                riskLevel,
+                riskLevel: riskLevel,
                 mainIssues
-            }
+            },
+            modifiedFiles
         };
     }
-    async analyzeCommit(commit) {
-        const changes = await this.getChanges(commit);
+    async analyzeCommit(commit, excludeFolders = ['node_modules']) {
+        console.error('Analyzing commit:', commit.id);
+        const changes = await this.getChanges(commit, excludeFolders);
+        console.error('Got changes:', changes);
+        // Use the already analyzed files from getChanges
+        const fileMetrics = changes.files.map(file => ({
+            file: file.path,
+            before: file.detailedComplexity.before,
+            after: file.detailedComplexity.after
+        }));
         // Calculate overall complexity metrics
         const totalComplexity = {
-            cyclomatic: changes.files.reduce((sum, file) => sum + file.complexity.cyclomatic, 0),
-            cognitive: changes.files.reduce((sum, file) => sum + file.complexity.cognitive, 0)
+            cyclomatic: fileMetrics.reduce((sum, file) => sum + (file.after?.cyclomatic || 0), 0),
+            cognitive: fileMetrics.reduce((sum, file) => sum + (file.after?.cognitive || 0), 0)
         };
-        // Calculate impact score
+        console.error('Total complexity:', totalComplexity);
+        // Calculate complexity delta
+        const complexityDelta = fileMetrics.reduce((sum, file) => sum + ((file.after?.cyclomatic || 0) - (file.before?.cyclomatic || 0)), 0);
+        console.error('Complexity delta:', complexityDelta);
+        // Calculate impact score based on changes and complexity
         const impactScore = Math.min(100, (changes.files.length * 10) +
-            (totalComplexity.cyclomatic * 5) +
-            (totalComplexity.cognitive * 5));
+            Math.abs(complexityDelta * 5) +
+            (totalComplexity.cyclomatic * 2));
         // Determine impact level
         const impactLevel = impactScore > 70 ? 'high' : impactScore > 40 ? 'medium' : 'low';
         // Identify impact factors
@@ -239,7 +272,8 @@ class GitProvider extends base_1.BaseProvider {
                 level: impactLevel,
                 factors
             },
-            recommendations
+            recommendations,
+            modifiedFiles: changes.modifiedFiles
         };
     }
     async analyzeChanges(changes) {
