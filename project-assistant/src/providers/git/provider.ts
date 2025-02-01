@@ -20,8 +20,11 @@ export class GitProvider extends BaseProvider {
 
   constructor(config: GitProviderConfig) {
     super(config);
+    // Use the parent directory of the executable as the working directory
+    const workingDir = config.workingDir || process.cwd();
+    console.error('Initializing GitProvider with working directory:', workingDir);
     this.operations = new GitOperations(
-      config.workingDir || process.cwd(),
+      workingDir,
       config.gitPath
     );
 
@@ -133,23 +136,49 @@ public async getChanges(commit: Commit, excludeFolders: string | string[] | unde
     
     const changes = await this.operations.getCommitChanges(commit.id, excludeFoldersArray);
     
-    // Get only JS/TS files
-    const modifiedFiles = changes.files
-      .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
-      .map(file => file.file);
+    // Get only JS/TS files and analyze their complexity
+    const modifiedFiles = await Promise.all(
+      changes.files
+        .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
+        .map(async file => {
+          try {
+            const content = await this.operations.getFileAtCommit(commit.id, file.file);
+            const metrics = this.analyzer.analyze(content);
+            return {
+              path: file.file,
+              metrics: {
+                cyclomatic: metrics.cyclomatic,
+                cognitive: metrics.cognitive,
+                maintainability: metrics.maintainability || 0
+              }
+            };
+          } catch (error) {
+            console.error(`Error analyzing ${file.file}:`, error);
+            return {
+              path: file.file,
+              metrics: {
+                cyclomatic: 0,
+                cognitive: 0,
+                maintainability: 0
+              }
+            };
+          }
+        })
+    );
     
-    console.error('Analyzing files:', modifiedFiles);
+    console.error('Analyzed files:', modifiedFiles);
     const analyzedFiles: DetailedFileAnalysis[] = await Promise.all(
-      modifiedFiles
-        .map(async filePath => {
+      changes.files
+        .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
+        .map(async file => {
         try {
           // Get file content after the commit
-          const contentAfter = await this.operations.getFileAtCommit(commit.id, filePath);
+          const contentAfter = await this.operations.getFileAtCommit(commit.id, file.file);
           let contentBefore = '';
           
           try {
             // Try to get content before commit, use empty string if file didn't exist
-            contentBefore = await this.operations.getFileAtCommit(commit.id + '^', filePath);
+            contentBefore = await this.operations.getFileAtCommit(commit.id + '^', file.file);
           } catch (error) {
             // File is likely new, use empty content for "before" state
             contentBefore = '';
@@ -158,7 +187,7 @@ public async getChanges(commit: Commit, excludeFolders: string | string[] | unde
           // Analyze complexity before and after
           const metricsBefore = contentBefore ? this.analyzer.analyze(contentBefore) : { cyclomatic: 0, cognitive: 0, maintainability: 100 };
           const metricsAfter = this.analyzer.analyze(contentAfter);
-          console.error(`Analyzed ${filePath}: Before - cyclomatic=${metricsBefore.cyclomatic}, cognitive=${metricsBefore.cognitive}, After - cyclomatic=${metricsAfter.cyclomatic}, cognitive=${metricsAfter.cognitive}`);
+          console.error(`Analyzed ${file.file}: Before - cyclomatic=${metricsBefore.cyclomatic}, cognitive=${metricsBefore.cognitive}, After - cyclomatic=${metricsAfter.cyclomatic}, cognitive=${metricsAfter.cognitive}`);
           
           // Calculate risk score based on complexity
           const riskScore = Math.min(
@@ -179,7 +208,7 @@ public async getChanges(commit: Commit, excludeFolders: string | string[] | unde
           }
           
           return {
-            path: filePath,
+            path: file.file,
             type: 'modified',
             complexity: metricsAfter,
             detailedComplexity: {
@@ -196,10 +225,10 @@ public async getChanges(commit: Commit, excludeFolders: string | string[] | unde
             suggestions
           };
         } catch (error) {
-          console.error(`Error analyzing ${filePath}:`, error);
+          console.error(`Error analyzing ${file.file}:`, error);
           // Return default metrics if file analysis fails
           return {
-            path: filePath,
+            path: file.file,
             type: 'modified',
             complexity: { cyclomatic: 0, cognitive: 0 },
             detailedComplexity: {
@@ -246,7 +275,7 @@ public async getChanges(commit: Commit, excludeFolders: string | string[] | unde
     };
   }
 
-  public async analyzeCommit(commit: Commit, excludeFolders: string | string[] | undefined = ['node_modules']): Promise<CommitAnalysis & { modifiedFiles: string[] }> {
+  public async analyzeCommit(commit: Commit, excludeFolders: string | string[] | undefined = ['node_modules']): Promise<CommitAnalysis & { modifiedFiles: Array<{ path: string; metrics: { cyclomatic: number; cognitive: number; maintainability: number; } }> }> {
     console.error('Analyzing commit:', commit.id);
     const changes = await this.getChanges(commit, excludeFolders);
     console.error('Got changes:', changes);

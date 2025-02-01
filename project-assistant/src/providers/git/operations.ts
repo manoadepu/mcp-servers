@@ -9,18 +9,23 @@ export class GitOperations {
   private git: SimpleGit;
 
   constructor(workingDir: string, gitPath?: string) {
-    // Normalize path to use forward slashes
-    const normalizedDir = workingDir.replace(/\\/g, '/');
-    console.error('Initializing git operations with directory:', normalizedDir);
-    
-    const options = {
-      baseDir: normalizedDir,
-      binary: gitPath || 'git',
-      maxConcurrentProcesses: 6,
-      trimmed: true
-    };
-
     try {
+      // Normalize path to use forward slashes
+      const normalizedDir = workingDir.replace(/\\/g, '/');
+      console.error('Initializing git operations with directory:', normalizedDir);
+      
+      // Verify directory exists
+      if (!require('fs').existsSync(normalizedDir)) {
+        throw new Error(`Directory does not exist: ${normalizedDir}`);
+      }
+      
+      const options = {
+        baseDir: normalizedDir,
+        binary: gitPath || 'git',
+        maxConcurrentProcesses: 6,
+        trimmed: true
+      };
+
       this.git = simpleGit(options);
     } catch (error) {
       console.error('Error initializing git:', error);

@@ -1,0 +1,17 @@
+services:
+  sqlite:
+    build: .
+    volumes:
+      - ./data:/app/data
+
+  # SQLite Web UI
+  sqlitebrowser:
+    image: lscr.io/linuxserver/sqlitebrowser:latest
+    platform: linux/arm64
+    ports:
+      - "3001:3000"
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./data:/data

@@ -62,7 +62,14 @@ export interface ChangeAnalysis {
  * Extended change analysis
  */
 export interface ExtendedChangeAnalysis extends ChangeAnalysis {
-    modifiedFiles: string[];
+    modifiedFiles: Array<{
+        path: string;
+        metrics: {
+            cyclomatic: number;
+            cognitive: number;
+            maintainability: number;
+        };
+    }>;
 }
 /**
  * Detailed file analysis

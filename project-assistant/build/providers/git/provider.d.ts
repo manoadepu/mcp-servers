@@ -18,7 +18,14 @@ export declare class GitProvider extends BaseProvider {
     getCommitHistory(repo: Repository, options: HistoryOptions): Promise<Commit[]>;
     getChanges(commit: Commit, excludeFolders?: string | string[] | undefined): Promise<ExtendedChangeAnalysis>;
     analyzeCommit(commit: Commit, excludeFolders?: string | string[] | undefined): Promise<CommitAnalysis & {
-        modifiedFiles: string[];
+        modifiedFiles: Array<{
+            path: string;
+            metrics: {
+                cyclomatic: number;
+                cognitive: number;
+                maintainability: number;
+            };
+        }>;
     }>;
     analyzeChanges(changes: ChangeAnalysis): Promise<CommitAnalysis>;
 }
