@@ -68,7 +68,14 @@ export interface ChangeAnalysis {
  * Extended change analysis
  */
 export interface ExtendedChangeAnalysis extends ChangeAnalysis {
-  modifiedFiles: string[];
+  modifiedFiles: Array<{
+    path: string;
+    metrics: {
+      cyclomatic: number;
+      cognitive: number;
+      maintainability: number;
+    };
+  }>;
 }
 
 /**
@@ -162,6 +169,62 @@ export type GitCapability = typeof GIT_CAPABILITIES[number];
 /**
  * Git error codes
  */
+/**
+ * Git PR information
+ */
+export interface GitPRInfo {
+  number: number;
+  title: string;
+  description: string;
+  author: string;
+  baseBranch: string;
+  headBranch: string;
+  commits: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  mergedAt?: Date;
+  state: 'open' | 'closed' | 'merged';
+}
+
+/**
+ * PR analysis result
+ */
+export interface PRAnalysis {
+  pr: GitPRInfo;
+  commits: Array<{
+    hash: string;
+    analysis: DetailedFileAnalysis[];
+  }>;
+  impact: {
+    score: number;
+    level: 'low' | 'medium' | 'high';
+    factors: string[];
+  };
+  complexity: {
+    before: ComplexityMetrics;
+    after: ComplexityMetrics;
+    delta: number;
+  };
+  recommendations: string[];
+  hotspots: Array<{
+    path: string;
+    changeFrequency: number;
+    complexityTrend: Array<{
+      commit: string;
+      complexity: ComplexityMetrics;
+    }>;
+  }>;
+}
+
+/**
+ * PR analysis parameters
+ */
+export interface PRAnalysisParams {
+  prNumber: string;
+  repoPath: string;
+  excludeFolders?: string[];
+}
+
 export type GitErrorCode =
   | 'REPOSITORY_NOT_FOUND'
   | 'INVALID_REFERENCE'
@@ -172,6 +235,7 @@ export type GitErrorCode =
   | 'LOCK_ERROR'
   | 'REMOTE_ERROR'
   | 'AUTHENTICATION_FAILED'
+  | 'PR_NOT_FOUND'
   | 'OPERATION_FAILED';
 
 /**

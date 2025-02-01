@@ -13,7 +13,10 @@ class GitProvider extends base_1.BaseProvider {
     analyzer;
     constructor(config) {
         super(config);
-        this.operations = new operations_1.GitOperations(config.workingDir || process.cwd(), config.gitPath);
+        // Use the parent directory of the executable as the working directory
+        const workingDir = config.workingDir || process.cwd();
+        console.error('Initializing GitProvider with working directory:', workingDir);
+        this.operations = new operations_1.GitOperations(workingDir, config.gitPath);
         // Initialize analyzers
         this.analyzer = new complexity_1.ComplexityAnalyzer({
             includeHalstead: true,
@@ -107,20 +110,45 @@ class GitProvider extends base_1.BaseProvider {
             (Array.isArray(excludeFolders) ? excludeFolders : [excludeFolders]) :
             ['node_modules'];
         const changes = await this.operations.getCommitChanges(commit.id, excludeFoldersArray);
-        // Get only JS/TS files
-        const modifiedFiles = changes.files
+        // Get only JS/TS files and analyze their complexity
+        const modifiedFiles = await Promise.all(changes.files
             .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
-            .map(file => file.file);
-        console.error('Analyzing files:', modifiedFiles);
-        const analyzedFiles = await Promise.all(modifiedFiles
-            .map(async (filePath) => {
+            .map(async (file) => {
+            try {
+                const content = await this.operations.getFileAtCommit(commit.id, file.file);
+                const metrics = this.analyzer.analyze(content);
+                return {
+                    path: file.file,
+                    metrics: {
+                        cyclomatic: metrics.cyclomatic,
+                        cognitive: metrics.cognitive,
+                        maintainability: metrics.maintainability || 0
+                    }
+                };
+            }
+            catch (error) {
+                console.error(`Error analyzing ${file.file}:`, error);
+                return {
+                    path: file.file,
+                    metrics: {
+                        cyclomatic: 0,
+                        cognitive: 0,
+                        maintainability: 0
+                    }
+                };
+            }
+        }));
+        console.error('Analyzed files:', modifiedFiles);
+        const analyzedFiles = await Promise.all(changes.files
+            .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
+            .map(async (file) => {
             try {
                 // Get file content after the commit
-                const contentAfter = await this.operations.getFileAtCommit(commit.id, filePath);
+                const contentAfter = await this.operations.getFileAtCommit(commit.id, file.file);
                 let contentBefore = '';
                 try {
                     // Try to get content before commit, use empty string if file didn't exist
-                    contentBefore = await this.operations.getFileAtCommit(commit.id + '^', filePath);
+                    contentBefore = await this.operations.getFileAtCommit(commit.id + '^', file.file);
                 }
                 catch (error) {
                     // File is likely new, use empty content for "before" state
@@ -129,7 +157,7 @@ class GitProvider extends base_1.BaseProvider {
                 // Analyze complexity before and after
                 const metricsBefore = contentBefore ? this.analyzer.analyze(contentBefore) : { cyclomatic: 0, cognitive: 0, maintainability: 100 };
                 const metricsAfter = this.analyzer.analyze(contentAfter);
-                console.error(`Analyzed ${filePath}: Before - cyclomatic=${metricsBefore.cyclomatic}, cognitive=${metricsBefore.cognitive}, After - cyclomatic=${metricsAfter.cyclomatic}, cognitive=${metricsAfter.cognitive}`);
+                console.error(`Analyzed ${file.file}: Before - cyclomatic=${metricsBefore.cyclomatic}, cognitive=${metricsBefore.cognitive}, After - cyclomatic=${metricsAfter.cyclomatic}, cognitive=${metricsAfter.cognitive}`);
                 // Calculate risk score based on complexity
                 const riskScore = Math.min(100, ((metricsAfter.cyclomatic / 10) + (metricsAfter.cognitive / 15)) * 50);
                 // Generate suggestions
@@ -144,7 +172,7 @@ class GitProvider extends base_1.BaseProvider {
                     suggestions.push('Low maintainability - needs refactoring');
                 }
                 return {
-                    path: filePath,
+                    path: file.file,
                     type: 'modified',
                     complexity: metricsAfter,
                     detailedComplexity: {
@@ -162,10 +190,10 @@ class GitProvider extends base_1.BaseProvider {
                 };
             }
             catch (error) {
-                console.error(`Error analyzing ${filePath}:`, error);
+                console.error(`Error analyzing ${file.file}:`, error);
                 // Return default metrics if file analysis fails
                 return {
-                    path: filePath,
+                    path: file.file,
                     type: 'modified',
                     complexity: { cyclomatic: 0, cognitive: 0 },
                     detailedComplexity: {
@@ -275,6 +303,178 @@ class GitProvider extends base_1.BaseProvider {
             recommendations,
             modifiedFiles: changes.modifiedFiles
         };
+    }
+    async analyzePR(prNumber, excludeFolders = ['node_modules']) {
+        try {
+            // Get PR information
+            const prInfo = await this.operations.getPRInfo(prNumber);
+            // Get PR changes
+            const changes = await this.operations.getPRChanges(prNumber, excludeFolders);
+            // Analyze each commit in the PR
+            const commitAnalyses = await Promise.all(prInfo.commits.map(async (hash) => ({
+                hash,
+                analysis: await this.analyzeCommitFiles(hash, changes.files.map(f => f.file))
+            })));
+            // Calculate overall complexity metrics
+            const complexityMetrics = this.calculatePRComplexityMetrics(commitAnalyses);
+            // Calculate impact score
+            const impactScore = this.calculatePRImpactScore(changes, complexityMetrics);
+            // Generate recommendations
+            const recommendations = this.generatePRRecommendations(changes, complexityMetrics);
+            // Identify hotspots
+            const hotspots = await this.identifyPRHotspots(changes.files, prInfo.commits);
+            return {
+                pr: prInfo,
+                commits: commitAnalyses,
+                impact: {
+                    score: impactScore,
+                    level: impactScore > 70 ? 'high' : impactScore > 40 ? 'medium' : 'low',
+                    factors: this.determinePRImpactFactors(changes, complexityMetrics)
+                },
+                complexity: complexityMetrics,
+                recommendations,
+                hotspots
+            };
+        }
+        catch (error) {
+            console.error('Error analyzing PR:', error);
+            throw error;
+        }
+    }
+    async analyzeCommitFiles(hash, files) {
+        const analyses = [];
+        for (const file of files) {
+            if (!file.match(/\.(ts|js|tsx|jsx)$/))
+                continue;
+            const contentAfter = await this.operations.getFileAtCommit(hash, file);
+            let contentBefore = '';
+            try {
+                contentBefore = await this.operations.getFileAtCommit(`${hash}^`, file);
+            }
+            catch (error) {
+                // File is likely new
+            }
+            const metricsBefore = contentBefore ? this.analyzer.analyze(contentBefore) : { cyclomatic: 0, cognitive: 0, maintainability: 100 };
+            const metricsAfter = this.analyzer.analyze(contentAfter);
+            analyses.push({
+                path: file,
+                type: 'modified',
+                complexity: metricsAfter,
+                detailedComplexity: {
+                    before: metricsBefore,
+                    after: metricsAfter,
+                    delta: metricsAfter.cyclomatic - metricsBefore.cyclomatic
+                },
+                impact: this.calculateFileImpact(metricsBefore, metricsAfter),
+                riskScore: this.calculateRiskScore(metricsBefore, metricsAfter),
+                suggestions: this.generateFileSuggestions(metricsAfter)
+            });
+        }
+        return analyses;
+    }
+    calculatePRComplexityMetrics(commitAnalyses) {
+        const before = {
+            cyclomatic: 0,
+            cognitive: 0
+        };
+        const after = {
+            cyclomatic: 0,
+            cognitive: 0
+        };
+        for (const commit of commitAnalyses) {
+            for (const file of commit.analysis) {
+                before.cyclomatic += file.detailedComplexity.before.cyclomatic;
+                before.cognitive += file.detailedComplexity.before.cognitive;
+                after.cyclomatic += file.detailedComplexity.after.cyclomatic;
+                after.cognitive += file.detailedComplexity.after.cognitive;
+            }
+        }
+        return {
+            before,
+            after,
+            delta: (after.cyclomatic + after.cognitive) - (before.cyclomatic + before.cognitive)
+        };
+    }
+    calculatePRImpactScore(changes, complexity) {
+        return Math.min(100, (changes.total.changes / 100) * 30 + // Size impact (30%)
+            (changes.total.files * 5) + // File count impact
+            Math.abs(complexity.delta * 2) // Complexity impact
+        );
+    }
+    generatePRRecommendations(changes, complexity) {
+        const recommendations = [];
+        if (changes.total.files > 10) {
+            recommendations.push('Consider breaking down the PR into smaller, focused changes');
+        }
+        if (changes.total.changes > 500) {
+            recommendations.push('Large change set detected - thorough review recommended');
+        }
+        if (complexity.delta > 20) {
+            recommendations.push('Significant complexity increase - consider refactoring opportunities');
+        }
+        return recommendations;
+    }
+    async identifyPRHotspots(files, commits) {
+        const hotspots = [];
+        for (const { file } of files) {
+            if (!file.match(/\.(ts|js|tsx|jsx)$/))
+                continue;
+            const complexityTrend = await Promise.all(commits.map(async (commit) => ({
+                commit,
+                complexity: this.analyzer.analyze(await this.operations.getFileAtCommit(commit, file))
+            })));
+            hotspots.push({
+                path: file,
+                changeFrequency: commits.length,
+                complexityTrend
+            });
+        }
+        return hotspots;
+    }
+    determinePRImpactFactors(changes, complexity) {
+        const factors = [];
+        if (changes.total.files > 10) {
+            factors.push('Large number of files modified');
+        }
+        if (changes.total.changes > 500) {
+            factors.push('Significant code churn');
+        }
+        if (complexity.delta > 20) {
+            factors.push('High complexity impact');
+        }
+        return factors;
+    }
+    calculateFileImpact(before, after) {
+        const complexityDelta = after.cyclomatic - before.cyclomatic;
+        const cognitiveDelta = after.cognitive - before.cognitive;
+        const score = Math.min(100, (Math.abs(complexityDelta) * 10) +
+            (Math.abs(cognitiveDelta) * 15));
+        const factors = [];
+        if (complexityDelta > 5)
+            factors.push('Significant cyclomatic complexity increase');
+        if (cognitiveDelta > 5)
+            factors.push('High cognitive complexity impact');
+        return {
+            score,
+            level: score > 70 ? 'high' : score > 40 ? 'medium' : 'low',
+            factors
+        };
+    }
+    calculateRiskScore(before, after) {
+        return Math.min(100, ((after.cyclomatic / 10) + (after.cognitive / 15)) * 50);
+    }
+    generateFileSuggestions(metrics) {
+        const suggestions = [];
+        if (metrics.cyclomatic > 10) {
+            suggestions.push('Consider breaking down complex logic');
+        }
+        if (metrics.cognitive > 15) {
+            suggestions.push('High cognitive load - simplify code structure');
+        }
+        if (metrics.maintainability && metrics.maintainability < 50) {
+            suggestions.push('Low maintainability - needs refactoring');
+        }
+        return suggestions;
     }
     async analyzeChanges(changes) {
         // This is a placeholder implementation

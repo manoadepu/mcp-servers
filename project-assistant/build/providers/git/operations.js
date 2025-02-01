@@ -12,16 +12,20 @@ const types_1 = require("./types");
 class GitOperations {
     git;
     constructor(workingDir, gitPath) {
-        // Normalize path to use forward slashes
-        const normalizedDir = workingDir.replace(/\\/g, '/');
-        console.error('Initializing git operations with directory:', normalizedDir);
-        const options = {
-            baseDir: normalizedDir,
-            binary: gitPath || 'git',
-            maxConcurrentProcesses: 6,
-            trimmed: true
-        };
         try {
+            // Normalize path to use forward slashes
+            const normalizedDir = workingDir.replace(/\\/g, '/');
+            console.error('Initializing git operations with directory:', normalizedDir);
+            // Verify directory exists
+            if (!require('fs').existsSync(normalizedDir)) {
+                throw new Error(`Directory does not exist: ${normalizedDir}`);
+            }
+            const options = {
+                baseDir: normalizedDir,
+                binary: gitPath || 'git',
+                maxConcurrentProcesses: 6,
+                trimmed: true
+            };
             this.git = (0, simple_git_1.default)(options);
         }
         catch (error) {
@@ -267,6 +271,109 @@ class GitOperations {
      * @param error Error object
      * @param operation Operation name
      */
+    /**
+     * Get pull request information
+     * @param prNumber PR number
+     */
+    async getPRInfo(prNumber) {
+        try {
+            await this.verifyRepository();
+            // Get PR branch information
+            const prBranch = await this.git.raw(['ls-remote', 'origin', `refs/pull/${prNumber}/head`]);
+            if (!prBranch) {
+                throw new Error(`PR #${prNumber} not found`);
+            }
+            const prHash = prBranch.split('\t')[0];
+            // Get PR commit information
+            const prCommit = await this.git.show([
+                '--no-patch',
+                '--format=%s%n%b%n%an%n%ai',
+                prHash
+            ]);
+            const [title, ...rest] = prCommit.split('\n');
+            const author = rest[rest.length - 2];
+            const date = rest[rest.length - 1];
+            const description = rest.slice(0, -2).join('\n');
+            // Get base and head branches
+            const baseBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
+            const headBranch = `pr-${prNumber}`;
+            // Get PR commits
+            const commits = await this.git.log([`${baseBranch}..${prHash}`]);
+            const commitHashes = commits.all.map(commit => commit.hash);
+            return {
+                number: parseInt(prNumber),
+                title,
+                description,
+                author,
+                baseBranch: baseBranch.trim(),
+                headBranch,
+                commits: commitHashes,
+                createdAt: new Date(date),
+                updatedAt: new Date(date),
+                state: 'open'
+            };
+        }
+        catch (error) {
+            throw this.handleError(error, 'getPRInfo');
+        }
+    }
+    /**
+     * Get PR file changes
+     * @param prNumber PR number
+     * @param excludePaths Paths to exclude
+     */
+    async getPRChanges(prNumber, excludePaths = ['node_modules']) {
+        try {
+            await this.verifyRepository();
+            // Get PR branch information
+            const prBranch = await this.git.raw(['ls-remote', 'origin', `refs/pull/${prNumber}/head`]);
+            if (!prBranch) {
+                throw new Error(`PR #${prNumber} not found`);
+            }
+            const prHash = prBranch.split('\t')[0];
+            const baseBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
+            // Prepare exclude paths for git command
+            const excludeArgs = excludePaths.map(path => `:^${path}`);
+            // Get diff stats between base branch and PR head
+            const stats = await this.git.raw([
+                'diff',
+                '--numstat',
+                `${baseBranch.trim()}...${prHash}`,
+                '--',
+                '.',
+                ...excludeArgs
+            ]);
+            if (!stats || !stats.trim()) {
+                return { files: [], total: { changes: 0, insertions: 0, deletions: 0, files: 0 } };
+            }
+            // Process tab-delimited output
+            const fileChanges = stats
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map(line => {
+                const [insertions = '0', deletions = '0', file = ''] = line.split('\t');
+                const binary = insertions === '-' && deletions === '-';
+                return {
+                    file,
+                    changes: binary ? 0 : Number(insertions) + Number(deletions),
+                    insertions: binary ? 0 : Number(insertions),
+                    deletions: binary ? 0 : Number(deletions),
+                    binary
+                };
+            });
+            const total = fileChanges.reduce((acc, file) => ({
+                changes: acc.changes + file.changes,
+                insertions: acc.insertions + file.insertions,
+                deletions: acc.deletions + file.deletions,
+                files: acc.files + 1
+            }), { changes: 0, insertions: 0, deletions: 0, files: 0 });
+            return { files: fileChanges, total };
+        }
+        catch (error) {
+            throw this.handleError(error, 'getPRChanges');
+        }
+    }
     handleError(error, operation) {
         const details = {
             code: this.getErrorCode(error),
