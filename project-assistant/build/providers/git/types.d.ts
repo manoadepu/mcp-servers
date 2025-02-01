@@ -137,12 +137,9 @@ export interface GitProviderFeatures {
 export declare const GIT_CAPABILITIES: readonly ["local-repository", "commit-signing", "branch-protection", "git-hooks", "file-history", "blame", "worktree"];
 export type GitCapability = typeof GIT_CAPABILITIES[number];
 /**
- * Git error codes
+ * Base PR information
  */
-/**
- * Git PR information
- */
-export interface GitPRInfo {
+export interface BasePRInfo {
     number: number;
     title: string;
     description: string;
@@ -155,6 +152,24 @@ export interface GitPRInfo {
     mergedAt?: Date;
     state: 'open' | 'closed' | 'merged';
 }
+/**
+ * Remote PR information
+ */
+export interface RemotePRInfo extends BasePRInfo {
+    isRemote: true;
+    remote: string;
+    url?: string;
+}
+/**
+ * Local PR information
+ */
+export interface LocalPRInfo extends BasePRInfo {
+    isLocal: true;
+}
+/**
+ * Git PR information
+ */
+export type GitPRInfo = RemotePRInfo | LocalPRInfo;
 /**
  * PR analysis result
  */
@@ -190,8 +205,13 @@ export interface PRAnalysis {
 export interface PRAnalysisParams {
     prNumber: string;
     repoPath: string;
+    baseBranch?: string;
+    headBranch?: string;
     excludeFolders?: string[];
 }
+/**
+ * Git error codes
+ */
 export type GitErrorCode = 'REPOSITORY_NOT_FOUND' | 'INVALID_REFERENCE' | 'MERGE_CONFLICT' | 'UNCOMMITTED_CHANGES' | 'HOOK_FAILED' | 'INVALID_PATH' | 'LOCK_ERROR' | 'REMOTE_ERROR' | 'AUTHENTICATION_FAILED' | 'PR_NOT_FOUND' | 'OPERATION_FAILED';
 /**
  * Git error details

@@ -27,7 +27,7 @@ export declare class GitProvider extends BaseProvider {
             };
         }>;
     }>;
-    analyzePR(prNumber: string, excludeFolders?: string[]): Promise<PRAnalysis>;
+    analyzePR(prNumber: string, excludeFolders?: string[], baseBranch?: string, headBranch?: string): Promise<PRAnalysis>;
     private analyzeCommitFiles;
     private calculatePRComplexityMetrics;
     private calculatePRImpactScore;

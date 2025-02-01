@@ -200,6 +200,16 @@ exports.analyzePRTool = {
                 type: 'string',
                 description: 'Path to Git repository'
             },
+            baseBranch: {
+                type: 'string',
+                description: 'Base branch name (for local PRs)',
+                optional: true
+            },
+            headBranch: {
+                type: 'string',
+                description: 'Head branch name (for local PRs)',
+                optional: true
+            },
             excludeFolders: {
                 type: 'array',
                 description: 'Folders to exclude from analysis (e.g., ["node_modules", "dist"])',
@@ -235,7 +245,7 @@ exports.analyzePRTool = {
             console.error('Initializing Git provider with config:', JSON.stringify(config));
             const provider = new provider_1.GitProvider(config);
             console.error('Starting PR analysis...');
-            const analysis = await provider.analyzePR(prNumber, excludeFolders);
+            const analysis = await provider.analyzePR(prNumber, excludeFolders, params.baseBranch, params.headBranch);
             console.error('Analysis complete');
             return {
                 type: 'success',

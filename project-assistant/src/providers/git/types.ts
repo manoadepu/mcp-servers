@@ -167,12 +167,9 @@ export const GIT_CAPABILITIES = [
 export type GitCapability = typeof GIT_CAPABILITIES[number];
 
 /**
- * Git error codes
+ * Base PR information
  */
-/**
- * Git PR information
- */
-export interface GitPRInfo {
+export interface BasePRInfo {
   number: number;
   title: string;
   description: string;
@@ -185,6 +182,27 @@ export interface GitPRInfo {
   mergedAt?: Date;
   state: 'open' | 'closed' | 'merged';
 }
+
+/**
+ * Remote PR information
+ */
+export interface RemotePRInfo extends BasePRInfo {
+  isRemote: true;
+  remote: string;
+  url?: string;
+}
+
+/**
+ * Local PR information
+ */
+export interface LocalPRInfo extends BasePRInfo {
+  isLocal: true;
+}
+
+/**
+ * Git PR information
+ */
+export type GitPRInfo = RemotePRInfo | LocalPRInfo;
 
 /**
  * PR analysis result
@@ -222,9 +240,14 @@ export interface PRAnalysis {
 export interface PRAnalysisParams {
   prNumber: string;
   repoPath: string;
+  baseBranch?: string;
+  headBranch?: string;
   excludeFolders?: string[];
 }
 
+/**
+ * Git error codes
+ */
 export type GitErrorCode =
   | 'REPOSITORY_NOT_FOUND'
   | 'INVALID_REFERENCE'

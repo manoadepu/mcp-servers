@@ -65,7 +65,7 @@ export declare class GitOperations {
      * @param hash Commit hash
      * @param path File path
      */
-    getFileAtCommit(hash: string, path: string): Promise<string>;
+    getFileAtCommit(commitOrRef: string, path: string): Promise<string>;
     /**
      * Get commit history
      * @param options History options
@@ -108,13 +108,13 @@ export declare class GitOperations {
      * Get pull request information
      * @param prNumber PR number
      */
-    getPRInfo(prNumber: string): Promise<GitPRInfo>;
+    getPRInfo(prNumber: string, baseBranch?: string, headBranch?: string): Promise<GitPRInfo>;
     /**
      * Get PR file changes
      * @param prNumber PR number
      * @param excludePaths Paths to exclude
      */
-    getPRChanges(prNumber: string, excludePaths?: string[]): Promise<{
+    getPRChanges(prNumber: string, baseBranch?: string, headBranch?: string, excludePaths?: string[]): Promise<{
         files: Array<{
             file: string;
             changes: number;

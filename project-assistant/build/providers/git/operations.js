@@ -179,29 +179,29 @@ class GitOperations {
      * @param hash Commit hash
      * @param path File path
      */
-    async getFileAtCommit(hash, path) {
+    async getFileAtCommit(commitOrRef, path) {
         try {
             await this.verifyRepository();
-            console.error(`Getting file ${path} at commit ${hash}`);
-            // Try to get file content, handle case where file doesn't exist in commit
+            console.error(`Getting file ${path} at ${commitOrRef}`);
+            // Try to get file content, handle case where file doesn't exist
             try {
-                const content = await this.git.show([`${hash}:${path}`]);
+                const content = await this.git.show([`${commitOrRef}:${path}`]);
                 console.error('Successfully retrieved file content');
                 return content;
             }
             catch (error) {
-                console.error('Error getting file at commit:', error);
+                console.error('Error getting file content:', error);
                 const stderr = error?.git?.stderr || '';
                 // Handle various cases where file doesn't exist
                 if (stderr.includes('exists on disk, but not in') ||
                     stderr.includes('does not exist') ||
                     stderr.includes('bad object')) {
-                    console.error('File does not exist in commit, returning empty content');
+                    console.error('File does not exist, returning empty content');
                     return '';
                 }
                 // For other errors, check if it's the first commit
                 try {
-                    await this.git.raw(['rev-parse', `${hash}^`]);
+                    await this.git.raw(['rev-parse', `${commitOrRef}^`]);
                 }
                 catch (parentError) {
                     console.error('No parent commit exists, returning empty content');
@@ -275,43 +275,102 @@ class GitOperations {
      * Get pull request information
      * @param prNumber PR number
      */
-    async getPRInfo(prNumber) {
+    async getPRInfo(prNumber, baseBranch, headBranch) {
         try {
             await this.verifyRepository();
-            // Get PR branch information
-            const prBranch = await this.git.raw(['ls-remote', 'origin', `refs/pull/${prNumber}/head`]);
-            if (!prBranch) {
-                throw new Error(`PR #${prNumber} not found`);
+            // Handle remote PR lookup
+            if (!baseBranch || !headBranch) {
+                try {
+                    // Validate PR number format
+                    if (isNaN(parseInt(prNumber))) {
+                        throw new Error('Invalid PR number format');
+                    }
+                    const prBranch = await this.git.raw(['ls-remote', 'origin', `refs/pull/${prNumber}/head`]);
+                    if (!prBranch || !prBranch.trim()) {
+                        throw new Error(`PR #${prNumber} not found or inaccessible`);
+                    }
+                    const prHash = prBranch.split('\t')[0];
+                    const prCommit = await this.git.show([
+                        '--no-patch',
+                        '--format=%s%n%b%n%an%n%ai',
+                        prHash
+                    ]);
+                    const [title, ...rest] = prCommit.split('\n');
+                    const author = rest[rest.length - 2];
+                    const date = rest[rest.length - 1];
+                    const description = rest.slice(0, -2).join('\n');
+                    const defaultBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
+                    const commits = await this.git.log([`${defaultBranch}..${prHash}`]);
+                    const commitHashes = commits.all.map(commit => commit.hash);
+                    console.error('Found commits in remote PR:', commitHashes);
+                    const remotePRInfo = {
+                        isRemote: true,
+                        remote: 'origin',
+                        number: parseInt(prNumber),
+                        title,
+                        description,
+                        author,
+                        baseBranch: defaultBranch.trim(),
+                        headBranch: `pr-${prNumber}`,
+                        commits: commitHashes,
+                        createdAt: new Date(date),
+                        updatedAt: new Date(date),
+                        state: 'open'
+                    };
+                    return remotePRInfo;
+                }
+                catch (error) {
+                    console.error('Remote PR lookup failed:', error);
+                    throw new Error(`PR #${prNumber} not found or inaccessible`);
+                }
             }
-            const prHash = prBranch.split('\t')[0];
-            // Get PR commit information
-            const prCommit = await this.git.show([
-                '--no-patch',
-                '--format=%s%n%b%n%an%n%ai',
-                prHash
-            ]);
-            const [title, ...rest] = prCommit.split('\n');
-            const author = rest[rest.length - 2];
-            const date = rest[rest.length - 1];
-            const description = rest.slice(0, -2).join('\n');
-            // Get base and head branches
-            const baseBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
-            const headBranch = `pr-${prNumber}`;
-            // Get PR commits
-            const commits = await this.git.log([`${baseBranch}..${prHash}`]);
-            const commitHashes = commits.all.map(commit => commit.hash);
-            return {
-                number: parseInt(prNumber),
-                title,
-                description,
-                author,
-                baseBranch: baseBranch.trim(),
-                headBranch,
-                commits: commitHashes,
-                createdAt: new Date(date),
-                updatedAt: new Date(date),
-                state: 'open'
-            };
+            // Handle local branch analysis
+            try {
+                // Verify both branches exist
+                const branches = await this.git.branch();
+                if (!branches.all.includes(baseBranch)) {
+                    throw new Error(`Base branch "${baseBranch}" not found`);
+                }
+                if (!branches.all.includes(headBranch)) {
+                    throw new Error(`Head branch "${headBranch}" not found`);
+                }
+                // Get head commit info
+                const headCommit = await this.git.raw(['rev-parse', headBranch]);
+                const prCommit = await this.git.show([
+                    '--no-patch',
+                    '--format=%s%n%b%n%an%n%ai',
+                    headCommit
+                ]);
+                const [title, ...rest] = prCommit.split('\n');
+                const author = rest[rest.length - 2];
+                const date = rest[rest.length - 1];
+                const description = rest.slice(0, -2).join('\n');
+                // Get all commits between base and head
+                const commits = await this.git.log([`${baseBranch}..${headBranch}`]);
+                const commitHashes = commits.all.map(commit => commit.hash);
+                if (commitHashes.length === 0) {
+                    throw new Error(`No commits found between ${baseBranch} and ${headBranch}`);
+                }
+                console.error('Found commits between branches:', commitHashes);
+                const localPRInfo = {
+                    isLocal: true,
+                    number: parseInt(prNumber),
+                    title,
+                    description,
+                    author,
+                    baseBranch,
+                    headBranch,
+                    commits: commitHashes,
+                    createdAt: new Date(date),
+                    updatedAt: new Date(date),
+                    state: 'open'
+                };
+                return localPRInfo;
+            }
+            catch (error) {
+                console.error('Local branch analysis failed:', error);
+                throw error;
+            }
         }
         catch (error) {
             throw this.handleError(error, 'getPRInfo');
@@ -322,23 +381,76 @@ class GitOperations {
      * @param prNumber PR number
      * @param excludePaths Paths to exclude
      */
-    async getPRChanges(prNumber, excludePaths = ['node_modules']) {
+    async getPRChanges(prNumber, baseBranch, headBranch, excludePaths = ['node_modules']) {
         try {
             await this.verifyRepository();
-            // Get PR branch information
-            const prBranch = await this.git.raw(['ls-remote', 'origin', `refs/pull/${prNumber}/head`]);
-            if (!prBranch) {
-                throw new Error(`PR #${prNumber} not found`);
+            let diffBase;
+            let diffHead;
+            // Handle local branches if provided
+            if (baseBranch && headBranch) {
+                try {
+                    // Verify both branches exist
+                    const branches = await this.git.branch();
+                    if (!branches.all.includes(baseBranch)) {
+                        throw new Error(`Base branch "${baseBranch}" not found`);
+                    }
+                    if (!branches.all.includes(headBranch)) {
+                        throw new Error(`Head branch "${headBranch}" not found`);
+                    }
+                    // Get commit hashes for both branches
+                    const baseCommit = await this.git.raw(['rev-parse', baseBranch]);
+                    const headCommit = await this.git.raw(['rev-parse', headBranch]);
+                    diffBase = baseCommit.trim();
+                    diffHead = headCommit.trim();
+                    console.error('Using local branches:', {
+                        base: { branch: baseBranch, commit: diffBase },
+                        head: { branch: headBranch, commit: diffHead }
+                    });
+                }
+                catch (error) {
+                    console.error('Local branch validation failed:', error);
+                    throw error;
+                }
             }
-            const prHash = prBranch.split('\t')[0];
-            const baseBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
+            else {
+                // Try remote PR if no local branches provided
+                try {
+                    // Validate PR number format
+                    if (isNaN(parseInt(prNumber))) {
+                        throw new Error('Invalid PR number format');
+                    }
+                    const prBranch = await this.git.raw(['ls-remote', 'origin', `refs/pull/${prNumber}/head`]);
+                    if (!prBranch || !prBranch.trim()) {
+                        throw new Error(`PR #${prNumber} not found or inaccessible`);
+                    }
+                    const prHash = prBranch.split('\t')[0];
+                    const defaultBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
+                    diffHead = prHash;
+                    diffBase = defaultBranch.trim();
+                    console.error('Using remote PR:', {
+                        base: { branch: diffBase },
+                        head: { commit: diffHead }
+                    });
+                }
+                catch (error) {
+                    console.error('Remote PR lookup failed:', error);
+                    throw new Error(`PR #${prNumber} not found or inaccessible`);
+                }
+            }
+            if (!diffBase || !diffHead) {
+                throw new Error('Failed to determine base and head references for comparison');
+            }
+            console.error('Analyzing changes between:', {
+                base: diffBase,
+                head: diffHead
+            });
             // Prepare exclude paths for git command
             const excludeArgs = excludePaths.map(path => `:^${path}`);
             // Get diff stats between base branch and PR head
             const stats = await this.git.raw([
                 'diff',
                 '--numstat',
-                `${baseBranch.trim()}...${prHash}`,
+                `${diffBase}...${diffHead}`,
                 '--',
                 '.',
                 ...excludeArgs

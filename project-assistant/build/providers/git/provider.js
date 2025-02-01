@@ -304,16 +304,84 @@ class GitProvider extends base_1.BaseProvider {
             modifiedFiles: changes.modifiedFiles
         };
     }
-    async analyzePR(prNumber, excludeFolders = ['node_modules']) {
+    async analyzePR(prNumber, excludeFolders = ['node_modules'], baseBranch, headBranch) {
         try {
             // Get PR information
-            const prInfo = await this.operations.getPRInfo(prNumber);
+            let prInfo;
+            try {
+                prInfo = await this.operations.getPRInfo(prNumber, baseBranch, headBranch);
+            }
+            catch (error) {
+                console.error('Failed to get PR info:', error);
+                throw error;
+            }
             // Get PR changes
-            const changes = await this.operations.getPRChanges(prNumber, excludeFolders);
+            let changes;
+            try {
+                changes = await this.operations.getPRChanges(prNumber, prInfo.baseBranch, prInfo.headBranch, excludeFolders);
+            }
+            catch (error) {
+                console.error('Failed to get PR changes:', error);
+                throw new Error(`Failed to analyze changes for PR #${prNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+            console.error('Analyzing PR:', {
+                info: prInfo,
+                changes: {
+                    totalFiles: changes.files.length,
+                    totalChanges: changes.total.changes
+                }
+            });
+            // Get file contents for complexity analysis
+            const fileAnalyses = await Promise.all(changes.files
+                .filter((f) => f.file.match(/\.(ts|js|tsx|jsx)$/))
+                .map(async (file) => {
+                try {
+                    // Get content before and after
+                    let beforeContent = '';
+                    let afterContent = '';
+                    // Get content before and after
+                    beforeContent = await this.operations.getFileAtCommit(prInfo.baseBranch, file.file);
+                    afterContent = await this.operations.getFileAtCommit(prInfo.headBranch, file.file);
+                    // Analyze complexity
+                    const beforeMetrics = beforeContent ? this.analyzer.analyze(beforeContent) : { cyclomatic: 0, cognitive: 0 };
+                    const afterMetrics = afterContent ? this.analyzer.analyze(afterContent) : { cyclomatic: 0, cognitive: 0 };
+                    const riskScore = Math.min(100, ((afterMetrics.cyclomatic / 10) + (afterMetrics.cognitive / 15)) * 50);
+                    const suggestions = [];
+                    if (afterMetrics.cyclomatic > 10) {
+                        suggestions.push('Consider breaking down complex logic');
+                    }
+                    if (afterMetrics.cognitive > 15) {
+                        suggestions.push('High cognitive load - simplify code structure');
+                    }
+                    return {
+                        path: file.file,
+                        type: 'modified',
+                        complexity: afterMetrics,
+                        detailedComplexity: {
+                            before: beforeMetrics,
+                            after: afterMetrics,
+                            delta: afterMetrics.cyclomatic - beforeMetrics.cyclomatic
+                        },
+                        impact: {
+                            score: riskScore,
+                            level: (riskScore > 70 ? 'high' : riskScore > 40 ? 'medium' : 'low'),
+                            factors: []
+                        },
+                        riskScore,
+                        suggestions
+                    };
+                }
+                catch (error) {
+                    console.error(`Error analyzing file ${file.file}:`, error);
+                    return null;
+                }
+            }));
+            // Filter out failed analyses
+            const validAnalyses = fileAnalyses.filter((analysis) => analysis !== null);
             // Analyze each commit in the PR
             const commitAnalyses = await Promise.all(prInfo.commits.map(async (hash) => ({
                 hash,
-                analysis: await this.analyzeCommitFiles(hash, changes.files.map(f => f.file))
+                analysis: await this.analyzeCommitFiles(hash, changes.files.map((f) => f.file))
             })));
             // Calculate overall complexity metrics
             const complexityMetrics = this.calculatePRComplexityMetrics(commitAnalyses);
