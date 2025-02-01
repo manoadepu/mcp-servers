@@ -1,3 +1,4 @@
+import { GitPRInfo } from './types';
 /**
  * Git operations utility class
  */
@@ -103,6 +104,31 @@ export declare class GitOperations {
      * @param error Error object
      * @param operation Operation name
      */
+    /**
+     * Get pull request information
+     * @param prNumber PR number
+     */
+    getPRInfo(prNumber: string): Promise<GitPRInfo>;
+    /**
+     * Get PR file changes
+     * @param prNumber PR number
+     * @param excludePaths Paths to exclude
+     */
+    getPRChanges(prNumber: string, excludePaths?: string[]): Promise<{
+        files: Array<{
+            file: string;
+            changes: number;
+            insertions: number;
+            deletions: number;
+            binary: boolean;
+        }>;
+        total: {
+            changes: number;
+            insertions: number;
+            deletions: number;
+            files: number;
+        };
+    }>;
     private handleError;
     /**
      * Get error code from error

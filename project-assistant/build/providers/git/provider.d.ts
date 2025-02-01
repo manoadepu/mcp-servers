@@ -1,5 +1,5 @@
 import { BaseProvider } from '../../core/providers/base';
-import { GitProviderConfig, GitCapability, ExtendedChangeAnalysis } from './types';
+import { GitProviderConfig, GitCapability, ExtendedChangeAnalysis, PRAnalysis } from './types';
 import type { Repository, Branch, Commit, CommitAnalysis, ChangeAnalysis, HistoryOptions } from '../../core/providers';
 /**
  * Git provider implementation
@@ -27,5 +27,15 @@ export declare class GitProvider extends BaseProvider {
             };
         }>;
     }>;
+    analyzePR(prNumber: string, excludeFolders?: string[]): Promise<PRAnalysis>;
+    private analyzeCommitFiles;
+    private calculatePRComplexityMetrics;
+    private calculatePRImpactScore;
+    private generatePRRecommendations;
+    private identifyPRHotspots;
+    private determinePRImpactFactors;
+    private calculateFileImpact;
+    private calculateRiskScore;
+    private generateFileSuggestions;
     analyzeChanges(changes: ChangeAnalysis): Promise<CommitAnalysis>;
 }
