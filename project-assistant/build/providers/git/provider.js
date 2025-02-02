@@ -5,12 +5,14 @@ const base_1 = require("../../core/providers/base");
 const types_1 = require("./types");
 const operations_1 = require("./operations");
 const complexity_1 = require("../../core/analyzers/complexity");
+const client_1 = require("./llm/client");
 /**
  * Git provider implementation
  */
 class GitProvider extends base_1.BaseProvider {
     operations;
     analyzer;
+    llmClient;
     constructor(config) {
         super(config);
         // Use the parent directory of the executable as the working directory
@@ -22,8 +24,136 @@ class GitProvider extends base_1.BaseProvider {
             includeHalstead: true,
             includeMaintainability: true
         });
+        // Initialize LLM client
+        this.llmClient = new client_1.LLMClient(config.llmConfig?.apiKey);
         // Register Git-specific features
         this.registerFeature('git-operations', this.operations);
+        this.registerFeature('pr-summary', this.summarizePR.bind(this));
+    }
+    /**
+     * Get PR summary using LLM analysis
+     */
+    async summarizePR(prNumber, excludeFolders = ['node_modules'], baseBranch, headBranch) {
+        try {
+            console.error('summarizePR: Starting analysis');
+            const startTime = Date.now();
+            // Get PR analysis first
+            console.error('summarizePR: Getting PR analysis');
+            const analysis = await this.analyzePR(prNumber, excludeFolders, baseBranch, headBranch);
+            console.error('summarizePR: PR analysis result:', {
+                prInfo: {
+                    number: analysis.pr.number,
+                    title: analysis.pr.title,
+                    author: analysis.pr.author,
+                    commits: analysis.pr.commits.length
+                },
+                changes: {
+                    totalFiles: analysis.commits.reduce((sum, c) => sum + c.analysis.length, 0),
+                    complexity: analysis.complexity,
+                    impact: analysis.impact
+                }
+            });
+            console.error(`summarizePR: PR analysis completed in ${Date.now() - startTime}ms`);
+            // Prepare context for LLM
+            console.error('summarizePR: Preparing LLM context');
+            const context = {
+                repository: {
+                    language: 'TypeScript', // We could detect this from file extensions
+                    framework: 'Node.js', // Could be detected from package.json
+                    architecture: 'Modular' // Could be inferred from project structure
+                },
+                changes: {
+                    diff: this.formatDiff(analysis),
+                    files: analysis.commits.flatMap(commit => commit.analysis.map(file => file.path)),
+                    dependencies: this.extractDependencyChanges(analysis),
+                    apiChanges: this.extractAPIChanges(analysis)
+                },
+                metrics: {
+                    complexity: this.formatComplexityMetrics(analysis.complexity),
+                    impact: this.formatImpactMetrics(analysis.impact),
+                    hotspots: this.formatHotspots(analysis.hotspots)
+                }
+            };
+            // Get LLM analysis
+            console.error('summarizePR: Starting LLM analysis with context:', {
+                repository: context.repository,
+                changedFiles: context.changes.files.length,
+                dependencyChanges: context.changes.dependencies.length,
+                apiChanges: context.changes.apiChanges.length
+            });
+            const llmStartTime = Date.now();
+            const result = await this.llmClient.analyzePR(context);
+            console.error(`summarizePR: LLM analysis completed in ${Date.now() - llmStartTime}ms`);
+            console.error('summarizePR: Analysis result:', {
+                purpose: result.purpose,
+                changes: result.changes,
+                impact: result.impact,
+                reviewPoints: result.review.length
+            });
+            console.error(`summarizePR: Total time: ${Date.now() - startTime}ms`);
+            return result;
+        }
+        catch (error) {
+            console.error('Error getting PR summary:', error);
+            throw error;
+        }
+    }
+    /**
+     * Format diff for LLM analysis
+     */
+    formatDiff(analysis) {
+        return analysis.commits
+            .map(commit => {
+            const files = commit.analysis
+                .map(file => `${file.path}: ${file.detailedComplexity.delta} complexity change`)
+                .join('\n');
+            return `Commit ${commit.hash}:\n${files}`;
+        })
+            .join('\n\n');
+    }
+    /**
+     * Extract dependency changes
+     */
+    extractDependencyChanges(analysis) {
+        // This could be enhanced to actually parse package.json changes
+        return analysis.commits
+            .flatMap(commit => commit.analysis)
+            .filter(file => file.path.includes('package.json'))
+            .map(file => `package.json modified`);
+    }
+    /**
+     * Extract API changes
+     */
+    extractAPIChanges(analysis) {
+        // This could be enhanced to detect actual API changes
+        return analysis.commits
+            .flatMap(commit => commit.analysis)
+            .filter(file => file.path.includes('/api/') || file.path.includes('Controller'))
+            .map(file => `API changes in ${file.path}`);
+    }
+    /**
+     * Format complexity metrics
+     */
+    formatComplexityMetrics(complexity) {
+        return `Before: cyclomatic=${complexity.before.cyclomatic}, cognitive=${complexity.before.cognitive}
+After: cyclomatic=${complexity.after.cyclomatic}, cognitive=${complexity.after.cognitive}
+Delta: ${complexity.delta}`;
+    }
+    /**
+     * Format impact metrics
+     */
+    formatImpactMetrics(impact) {
+        return `Impact Score: ${impact.score}
+Level: ${impact.level}
+Factors: ${impact.factors.join(', ')}`;
+    }
+    /**
+     * Format hotspots
+     */
+    formatHotspots(hotspots) {
+        return hotspots
+            .map(spot => `${spot.path}: changed ${spot.changeFrequency} times`)
+            .join('\n');
     }
     getName() {
         return 'Git';
@@ -318,7 +448,10 @@ class GitProvider extends base_1.BaseProvider {
             // Get PR changes
             let changes;
             try {
-                changes = await this.operations.getPRChanges(prNumber, prInfo.baseBranch, prInfo.headBranch, excludeFolders);
+                // Use the branch names from PR info
+                const baseBranch = prInfo.baseBranch;
+                const headBranch = ('isRemote' in prInfo) ? prInfo.headBranch : prInfo.headBranch;
+                changes = await this.operations.getPRChanges(prNumber, baseBranch, headBranch, excludeFolders);
             }
             catch (error) {
                 console.error('Failed to get PR changes:', error);
@@ -420,9 +553,10 @@ class GitProvider extends base_1.BaseProvider {
                 contentBefore = await this.operations.getFileAtCommit(`${hash}^`, file);
             }
             catch (error) {
-                // File is likely new
+                // File is likely new, use empty content for "before" state
+                contentBefore = '';
             }
-            const metricsBefore = contentBefore ? this.analyzer.analyze(contentBefore) : { cyclomatic: 0, cognitive: 0, maintainability: 100 };
+            const metricsBefore = contentBefore ? this.analyzer.analyze(contentBefore) : { cyclomatic: 0, cognitive: 0 };
             const metricsAfter = this.analyzer.analyze(contentAfter);
             analyses.push({
                 path: file,

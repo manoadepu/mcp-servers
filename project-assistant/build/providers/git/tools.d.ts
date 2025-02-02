@@ -1,3 +1,8 @@
+interface McpToolResponse {
+    type: 'success' | 'error' | 'progress';
+    data?: any;
+    error?: string;
+}
 interface McpToolHandler {
     name: string;
     description: string;
@@ -10,11 +15,7 @@ interface McpToolHandler {
         }>;
         required: string[];
     };
-    handler: (params: Record<string, any>) => Promise<{
-        type: 'success' | 'error';
-        data?: any;
-        error?: string;
-    }>;
+    handler: (params: Record<string, any>) => Promise<McpToolResponse>;
 }
 /**
  * Analyze commit tool handler
@@ -28,5 +29,9 @@ export declare const analyzePatternsTools: McpToolHandler;
  * Analyze PR tool handler
  */
 export declare const analyzePRTool: McpToolHandler;
+/**
+ * Summarize PR tool handler
+ */
+export declare const summarizePRTool: McpToolHandler;
 export declare const gitTools: McpToolHandler[];
 export {};

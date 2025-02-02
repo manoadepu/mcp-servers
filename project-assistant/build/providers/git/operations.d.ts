@@ -134,5 +134,9 @@ export declare class GitOperations {
      * Get error code from error
      * @param error Error object
      */
+    /**
+     * Process git diff stats output
+     */
+    private processGitStats;
     private getErrorCode;
 }

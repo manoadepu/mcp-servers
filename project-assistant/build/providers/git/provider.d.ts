@@ -1,5 +1,6 @@
 import { BaseProvider } from '../../core/providers/base';
 import { GitProviderConfig, GitCapability, ExtendedChangeAnalysis, PRAnalysis } from './types';
+import { PRSummaryResult } from './llm/types';
 import type { Repository, Branch, Commit, CommitAnalysis, ChangeAnalysis, HistoryOptions } from '../../core/providers';
 /**
  * Git provider implementation
@@ -7,7 +8,36 @@ import type { Repository, Branch, Commit, CommitAnalysis, ChangeAnalysis, Histor
 export declare class GitProvider extends BaseProvider {
     private operations;
     private analyzer;
+    private llmClient;
     constructor(config: GitProviderConfig);
+    /**
+     * Get PR summary using LLM analysis
+     */
+    summarizePR(prNumber: string, excludeFolders?: string[], baseBranch?: string, headBranch?: string): Promise<PRSummaryResult>;
+    /**
+     * Format diff for LLM analysis
+     */
+    private formatDiff;
+    /**
+     * Extract dependency changes
+     */
+    private extractDependencyChanges;
+    /**
+     * Extract API changes
+     */
+    private extractAPIChanges;
+    /**
+     * Format complexity metrics
+     */
+    private formatComplexityMetrics;
+    /**
+     * Format impact metrics
+     */
+    private formatImpactMetrics;
+    /**
+     * Format hotspots
+     */
+    private formatHotspots;
     protected getName(): string;
     protected getVersion(): string;
     protected getCapabilities(): GitCapability[];

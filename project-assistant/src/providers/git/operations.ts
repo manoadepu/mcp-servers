@@ -362,40 +362,57 @@ export class GitOperations {
             throw new Error(`PR #${prNumber} not found or inaccessible`);
           }
 
-          const prHash = prBranch.split('\t')[0];
-          const prCommit = await this.git.show([
-            '--no-patch',
-            '--format=%s%n%b%n%an%n%ai',
-            prHash
-          ]);
-          
-          const [title, ...rest] = prCommit.split('\n');
-          const author = rest[rest.length - 2];
-          const date = rest[rest.length - 1];
-          const description = rest.slice(0, -2).join('\n');
+          // Create temporary branch name
+          const tempBranch = `pr-${prNumber}-temp`;
 
-          const defaultBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
-          const commits = await this.git.log([`${defaultBranch}..${prHash}`]);
-          const commitHashes = commits.all.map(commit => commit.hash);
+          try {
+            // Fetch PR into temporary branch
+            console.error(`Fetching PR #${prNumber} into temporary branch ${tempBranch}`);
+            await this.git.fetch(['origin', `pull/${prNumber}/head:${tempBranch}`]);
 
-          console.error('Found commits in remote PR:', commitHashes);
+            // Get PR commit info
+            const prCommit = await this.git.show([
+              '--no-patch',
+              '--format=%s%n%b%n%an%n%ai',
+              tempBranch
+            ]);
+            
+            const [title, ...rest] = prCommit.split('\n');
+            const author = rest[rest.length - 2];
+            const date = rest[rest.length - 1];
+            const description = rest.slice(0, -2).join('\n');
 
-          const remotePRInfo: RemotePRInfo = {
-            isRemote: true,
-            remote: 'origin',
-            number: parseInt(prNumber),
-            title,
-            description,
-            author,
-            baseBranch: defaultBranch.trim(),
-            headBranch: `pr-${prNumber}`,
-            commits: commitHashes,
-            createdAt: new Date(date),
-            updatedAt: new Date(date),
-            state: 'open'
-          };
+            const defaultBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
+            const commits = await this.git.log([`${defaultBranch}..${tempBranch}`]);
+            const commitHashes = commits.all.map(commit => commit.hash);
 
-          return remotePRInfo;
+            console.error('Found commits in remote PR:', commitHashes);
+
+            const remotePRInfo: RemotePRInfo = {
+              isRemote: true,
+              remote: 'origin',
+              number: parseInt(prNumber),
+              title,
+              description,
+              author,
+              baseBranch: defaultBranch.trim(),
+              headBranch: tempBranch,
+              commits: commitHashes,
+              createdAt: new Date(date),
+              updatedAt: new Date(date),
+              state: 'open'
+            };
+
+            return remotePRInfo;
+          } catch (error) {
+            // Clean up temporary branch in case of error
+            try {
+              await this.git.raw(['branch', '-D', tempBranch]);
+            } catch (cleanupError) {
+              // Ignore cleanup errors
+            }
+            throw error;
+          }
         } catch (error) {
           console.error('Remote PR lookup failed:', error);
           throw new Error(`PR #${prNumber} not found or inaccessible`);
@@ -514,28 +531,61 @@ export class GitOperations {
           throw error;
         }
       } else {
-        // Try remote PR if no local branches provided
+      // Try remote PR if no local branches provided
+      try {
+        // Validate PR number format
+        if (isNaN(parseInt(prNumber))) {
+          throw new Error('Invalid PR number format');
+        }
+
+        // Get default branch
+        const defaultBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
+        diffBase = defaultBranch.trim();
+
+        // Create temporary branch name
+        const tempBranch = `pr-${prNumber}-temp`;
+
         try {
-          // Validate PR number format
-          if (isNaN(parseInt(prNumber))) {
-            throw new Error('Invalid PR number format');
-          }
-
-          const prBranch = await this.git.raw(['ls-remote', 'origin', `refs/pull/${prNumber}/head`]);
-          if (!prBranch || !prBranch.trim()) {
-            throw new Error(`PR #${prNumber} not found or inaccessible`);
-          }
-
-          const prHash = prBranch.split('\t')[0];
-          const defaultBranch = await this.git.raw(['symbolic-ref', '--short', 'HEAD']);
-
-          diffHead = prHash;
-          diffBase = defaultBranch.trim();
+          // Fetch PR into temporary branch
+          console.error(`Fetching PR #${prNumber} into temporary branch ${tempBranch}`);
+          await this.git.fetch(['origin', `pull/${prNumber}/head:${tempBranch}`]);
+          
+          // Use the temporary branch
+          diffHead = tempBranch;
 
           console.error('Using remote PR:', {
             base: { branch: diffBase },
-            head: { commit: diffHead }
+            head: { branch: diffHead }
           });
+
+          // Get changes
+          const excludeArgs = excludePaths.map(path => `:^${path}`);
+          const stats = await this.git.raw([
+            'diff',
+            '--numstat',
+            `${diffBase}...${diffHead}`,
+            '--',
+            '.',
+            ...excludeArgs
+          ]);
+
+          // Process results
+          const result = this.processGitStats(stats);
+
+          // Clean up temporary branch
+          console.error(`Cleaning up temporary branch ${tempBranch}`);
+          await this.git.raw(['branch', '-D', tempBranch]);
+
+          return result;
+        } catch (error) {
+          // Clean up temporary branch in case of error
+          try {
+            await this.git.raw(['branch', '-D', tempBranch]);
+          } catch (cleanupError) {
+            // Ignore cleanup errors
+          }
+          throw error;
+        }
         } catch (error) {
           console.error('Remote PR lookup failed:', error);
           throw new Error(`PR #${prNumber} not found or inaccessible`);
@@ -554,7 +604,7 @@ export class GitOperations {
       // Prepare exclude paths for git command
       const excludeArgs = excludePaths.map(path => `:^${path}`);
 
-      // Get diff stats between base branch and PR head
+      // Get diff stats between base and head
       const stats = await this.git.raw([
         'diff',
         '--numstat',
@@ -564,39 +614,8 @@ export class GitOperations {
         ...excludeArgs
       ]);
 
-      if (!stats || !stats.trim()) {
-        return { files: [], total: { changes: 0, insertions: 0, deletions: 0, files: 0 } };
-      }
-
-      // Process tab-delimited output
-      const fileChanges = stats
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map(line => {
-          const [insertions = '0', deletions = '0', file = ''] = line.split('\t');
-          const binary = insertions === '-' && deletions === '-';
-          
-          return {
-            file,
-            changes: binary ? 0 : Number(insertions) + Number(deletions),
-            insertions: binary ? 0 : Number(insertions),
-            deletions: binary ? 0 : Number(deletions),
-            binary
-          };
-        });
-
-      const total = fileChanges.reduce(
-        (acc, file) => ({
-          changes: acc.changes + file.changes,
-          insertions: acc.insertions + file.insertions,
-          deletions: acc.deletions + file.deletions,
-          files: acc.files + 1
-        }),
-        { changes: 0, insertions: 0, deletions: 0, files: 0 }
-      );
-
-      return { files: fileChanges, total };
+      // Process results
+      return this.processGitStats(stats);
     } catch (error) {
       throw this.handleError(error, 'getPRChanges');
     }
@@ -620,6 +639,59 @@ export class GitOperations {
    * Get error code from error
    * @param error Error object
    */
+  /**
+   * Process git diff stats output
+   */
+  private processGitStats(stats: string): {
+    files: Array<{
+      file: string;
+      changes: number;
+      insertions: number;
+      deletions: number;
+      binary: boolean;
+    }>;
+    total: {
+      changes: number;
+      insertions: number;
+      deletions: number;
+      files: number;
+    };
+  } {
+    if (!stats || !stats.trim()) {
+      return { files: [], total: { changes: 0, insertions: 0, deletions: 0, files: 0 } };
+    }
+
+    // Process tab-delimited output
+    const fileChanges = stats
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => {
+        const [insertions = '0', deletions = '0', file = ''] = line.split('\t');
+        const binary = insertions === '-' && deletions === '-';
+        
+        return {
+          file,
+          changes: binary ? 0 : Number(insertions) + Number(deletions),
+          insertions: binary ? 0 : Number(insertions),
+          deletions: binary ? 0 : Number(deletions),
+          binary
+        };
+      });
+
+    const total = fileChanges.reduce(
+      (acc, file) => ({
+        changes: acc.changes + file.changes,
+        insertions: acc.insertions + file.insertions,
+        deletions: acc.deletions + file.deletions,
+        files: acc.files + 1
+      }),
+      { changes: 0, insertions: 0, deletions: 0, files: 0 }
+    );
+
+    return { files: fileChanges, total };
+  }
+
   private getErrorCode(error: unknown): GitErrorCode {
     const message = ((error as Error)?.message || '').toLowerCase();
     const stderr = ((error as any)?.git?.stderr || '').toLowerCase();

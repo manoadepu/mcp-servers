@@ -10,6 +10,12 @@ export interface GitProviderConfig extends ProviderConfig {
         public: string;
         passphrase?: string;
     };
+    llmConfig?: {
+        apiKey: string;
+        model?: string;
+        maxTokens?: number;
+        temperature?: number;
+    };
 }
 /**
  * Git commit extra information
