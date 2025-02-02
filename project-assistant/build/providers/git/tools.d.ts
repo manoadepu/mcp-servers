@@ -22,10 +22,6 @@ interface McpToolHandler {
  */
 export declare const analyzeCommitTool: McpToolHandler;
 /**
- * Analyze patterns tool handler
- */
-export declare const analyzePatternsTools: McpToolHandler;
-/**
  * Analyze PR tool handler
  */
 export declare const analyzePRTool: McpToolHandler;

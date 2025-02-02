@@ -242,7 +242,7 @@ Factors: ${impact.factors.join(', ')}`;
         const changes = await this.operations.getCommitChanges(commit.id, excludeFoldersArray);
         // Get only JS/TS files and analyze their complexity
         const modifiedFiles = await Promise.all(changes.files
-            .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
+            .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/) && !file.file.startsWith('build/'))
             .map(async (file) => {
             try {
                 const content = await this.operations.getFileAtCommit(commit.id, file.file);
@@ -270,7 +270,7 @@ Factors: ${impact.factors.join(', ')}`;
         }));
         console.error('Analyzed files:', modifiedFiles);
         const analyzedFiles = await Promise.all(changes.files
-            .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/))
+            .filter(file => file.file.match(/\.(ts|js|tsx|jsx)$/) && !file.file.startsWith('build/'))
             .map(async (file) => {
             try {
                 // Get file content after the commit
@@ -466,15 +466,18 @@ Factors: ${impact.factors.join(', ')}`;
             });
             // Get file contents for complexity analysis
             const fileAnalyses = await Promise.all(changes.files
-                .filter((f) => f.file.match(/\.(ts|js|tsx|jsx)$/))
+                .filter((f) => f.file.match(/\.(ts|js|tsx|jsx)$/) && !f.file.startsWith('build/'))
                 .map(async (file) => {
                 try {
                     // Get content before and after
                     let beforeContent = '';
                     let afterContent = '';
-                    // Get content before and after
-                    beforeContent = await this.operations.getFileAtCommit(prInfo.baseBranch, file.file);
-                    afterContent = await this.operations.getFileAtCommit(prInfo.headBranch, file.file);
+                    // Get commit hashes for base and head
+                    const baseCommit = await this.operations.getCommitHash(prInfo.baseBranch);
+                    const headCommit = await this.operations.getCommitHash(prInfo.headBranch);
+                    // Get content before and after using commit hashes
+                    beforeContent = await this.operations.getFileAtCommit(baseCommit, file.file);
+                    afterContent = await this.operations.getFileAtCommit(headCommit, file.file);
                     // Analyze complexity
                     const beforeMetrics = beforeContent ? this.analyzer.analyze(beforeContent) : { cyclomatic: 0, cognitive: 0 };
                     const afterMetrics = afterContent ? this.analyzer.analyze(afterContent) : { cyclomatic: 0, cognitive: 0 };
@@ -545,7 +548,7 @@ Factors: ${impact.factors.join(', ')}`;
     async analyzeCommitFiles(hash, files) {
         const analyses = [];
         for (const file of files) {
-            if (!file.match(/\.(ts|js|tsx|jsx)$/))
+            if (!file.match(/\.(ts|js|tsx|jsx)$/) || file.startsWith('build/'))
                 continue;
             const contentAfter = await this.operations.getFileAtCommit(hash, file);
             let contentBefore = '';
@@ -619,7 +622,7 @@ Factors: ${impact.factors.join(', ')}`;
     async identifyPRHotspots(files, commits) {
         const hotspots = [];
         for (const { file } of files) {
-            if (!file.match(/\.(ts|js|tsx|jsx)$/))
+            if (!file.match(/\.(ts|js|tsx|jsx)$/) || file.startsWith('build/'))
                 continue;
             const complexityTrend = await Promise.all(commits.map(async (commit) => ({
                 commit,

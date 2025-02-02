@@ -223,32 +223,21 @@ export class GitOperations {
       await this.verifyRepository();
       console.error(`Getting file ${path} at ${commitOrRef}`);
       
-      // Try to get file content, handle case where file doesn't exist
+      // Skip build directory files
+      if (path.startsWith('build/')) {
+        console.error('Skipping build directory file:', path);
+        return '';
+      }
+
+      // Try to get file content
       try {
         const content = await this.git.show([`${commitOrRef}:${path}`]);
         console.error('Successfully retrieved file content');
         return content;
       } catch (error) {
         console.error('Error getting file content:', error);
-        const stderr = (error as any)?.git?.stderr || '';
-        
-        // Handle various cases where file doesn't exist
-        if (stderr.includes('exists on disk, but not in') ||
-            stderr.includes('does not exist') ||
-            stderr.includes('bad object')) {
-          console.error('File does not exist, returning empty content');
-          return '';
-        }
-        
-        // For other errors, check if it's the first commit
-        try {
-          await this.git.raw(['rev-parse', `${commitOrRef}^`]);
-        } catch (parentError) {
-          console.error('No parent commit exists, returning empty content');
-          return '';
-        }
-        
-        throw error;
+        // Return empty content for any error
+        return '';
       }
     } catch (error) {
       throw this.handleError(error, 'getFileAtCommit');
@@ -618,6 +607,18 @@ export class GitOperations {
       return this.processGitStats(stats);
     } catch (error) {
       throw this.handleError(error, 'getPRChanges');
+    }
+  }
+
+  /**
+   * Get commit hash for a branch or reference
+   */
+  public async getCommitHash(ref: string): Promise<string> {
+    try {
+      const hash = await this.git.raw(['rev-parse', ref]);
+      return hash.trim();
+    } catch (error) {
+      throw this.handleError(error, 'getCommitHash');
     }
   }
 

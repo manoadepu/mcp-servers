@@ -129,6 +129,10 @@ export declare class GitOperations {
             files: number;
         };
     }>;
+    /**
+     * Get commit hash for a branch or reference
+     */
+    getCommitHash(ref: string): Promise<string>;
     private handleError;
     /**
      * Get error code from error
