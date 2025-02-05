@@ -1,25 +1,43 @@
-version: '3'
-
 services:
   mcp-db:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     volumes:
+      - mcp_db_data:/app/data
       - ./data:/app/data
     environment:
       - DB_PATH=/app/data/mcp-servers.db
+    networks:
+      - mcp-network
 
-  # SQLite Web UI
   mcp-db-browser:
     image: lscr.io/linuxserver/sqlitebrowser:latest
-    platform: linux/arm64
     ports:
       - "3001:3000"
+    volumes:
+      - mcp_db_data:/data
     environment:
       - PUID=1000
       - PGID=1000
-    volumes:
-      - ./data:/data
+      - TZ=Etc/UTC
+      - ENABLE_WEBUI=true
+      - WEBUI_PORT=3000
+      - WEBUI_USER=admin
+      - WEBUI_PASS=admin
+    depends_on:
+      - mcp-db
+    networks:
+      - mcp-network
 
 volumes:
-  data:
+  mcp_db_data:
     driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data
+      o: bind
+
+networks:
+  mcp-network:
+    driver: bridge

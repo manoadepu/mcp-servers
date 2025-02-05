@@ -1,10 +1,38 @@
 {
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.4.1",
-    "@types/node": "^22.12.0",
-    "typescript": "^5.7.3"
+  "name": "mcp-servers",
+  "version": "1.0.0",
+  "description": "Collection of MCP servers with shared infrastructure",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "code-assistant",
+    "project-management"
+  ],
+  "scripts": {
+    "build": "npm run build:shared && npm run build:all",
+    "build:shared": "cd shared && npm run build",
+    "build:all": "npm run build --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "start:db": "docker-compose up -d",
+    "stop:db": "docker-compose down",
+    "logs:db": "docker-compose logs -f",
+    "reset:db": "docker-compose down -v && rm -rf data && docker-compose up -d",
+    "test": "npm run test --workspaces --if-present",
+    "test:setup": "./test-setup.sh",
+    "test:integration": "npm run test:setup && npm run test",
+    "lint": "npm run lint --workspaces --if-present",
+    "postinstall": "npm run build:shared"
   },
-  "devDependencies": {
-    "rimraf": "^6.0.1"
+  "keywords": [
+    "mcp",
+    "typescript",
+    "sqlite",
+    "docker"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
 }

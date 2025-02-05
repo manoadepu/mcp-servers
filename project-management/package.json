@@ -12,7 +12,6 @@
     "clean": "rm -rf build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.1.0",
     "sqlite3": "^5.1.7",
     "sqlite": "^5.1.1"
   },

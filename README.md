@@ -1,114 +1,197 @@
 # MCP Servers
 
-This repository contains multiple MCP (Model Context Protocol) servers that share a common SQLite database.
+A collection of Model Context Protocol (MCP) servers with shared infrastructure.
 
 ## Project Structure
 
 ```
 mcp-servers/
-├── code-assistant/     # Code analysis and Git integration
-├── project-management/ # Project and sprint management
-├── shared/            # Shared utilities and database connection
-├── data/             # Shared SQLite database
-├── docker-compose.yml # Database container configuration
-├── init-db.sql       # Database schema initialization
-└── setup-db.sh       # Database setup script
+├── docker/                    # Shared Docker configuration
+│   ├── Dockerfile            # Database container setup
+│   └── setup-db.sh           # Database initialization script
+├── docker-compose.yml        # Main compose file for all services
+├── shared/                   # Shared database and utilities
+│   ├── database/            # Database schemas and migrations
+│   │   ├── schema/         # Table definitions
+│   │   └── migrations/     # Database migrations
+│   └── src/                # Shared TypeScript code
+├── code-assistant/          # Code analysis MCP server
+└── project-management/      # Project management MCP server
 ```
 
-## Database Setup
+## Quick Start
 
-The shared SQLite database is used by all MCP servers in this repository. It contains tables for:
-
-- Code Assistant:
-  - repositories
-  - commits
-  - file_metrics
-  - file_changes
-  - hotspots
-  - pull_requests
-
-- Project Management:
-  - projects
-  - sprints
-  - tasks
-  - task_dependencies
-  - team_members
-  - sprint_metrics
-  - resource_metrics
-
-### Setup Instructions
-
-1. Start the database containers:
+1. Clone the repository:
 ```bash
-docker-compose up -d
+git clone <repository-url>
+cd mcp-servers
 ```
 
-2. Access SQLite Browser UI:
-- Open http://localhost:3001 in your browser
-- Database file is located at `/data/mcp-servers.db`
+2. Run the setup script:
+```bash
+./setup.sh
+```
 
-### Environment Variables
+This will:
+- Install dependencies for all projects
+- Build TypeScript code
+- Start the database containers
+- Run database migrations
+- Load test data
 
-- `DB_PATH`: Path to the SQLite database file (default: `/app/data/mcp-servers.db`)
+3. Access the database:
+- SQLite Browser: http://localhost:3001
+- Database file: `./data/mcp-servers.db`
 
 ## Development
 
-### Prerequisites
-- Node.js 18+
-- Docker and Docker Compose
-- TypeScript
+### Database Structure
 
-### Building the Shared Library
+The database is shared between all MCP servers and includes:
+
+1. Code Assistant Tables:
+- repositories: Store repository metadata
+- commits: Track git commit information
+- file_metrics: Store code complexity metrics
+- file_changes: Track file modifications
+- hotspots: Identify high-activity code areas
+- pull_requests: Manage PR data and impact analysis
+
+2. Project Management Tables:
+- projects: Project metadata and status
+- teams: Team organization and capacity
+- team_members: Team member details and skills
+- sprints: Sprint planning and tracking
+- tasks: Task management and assignments
+- task_dependencies: Task relationships
+- task_labels: Task categorization
+- sprint_metrics: Sprint performance tracking
+- resource_metrics: Resource utilization tracking
+
+### Database Migrations
+
+The shared module includes a migration system:
 
 ```bash
+# Check migration status
 cd shared
-npm install
-npm run build
+npm run migration:status
+
+# Create new migration
+npm run migration:create "description"
+
+# Apply pending migrations
+npm run migration:up
+
+# Rollback last migration
+npm run migration:down
 ```
 
 ### Running MCP Servers
 
-Each server can be run independently:
-
+1. Code Assistant:
 ```bash
-# Code Assistant
 cd code-assistant
-npm install
-npm run build
-npm start
-
-# Project Management
-cd project-management
-npm install
 npm run build
 npm start
 ```
 
-### Using the MCP Inspector
+2. Project Management:
+```bash
+cd project-management
+npm run build
+npm start
+```
+
+### Environment Variables
+
+Create a `.env` file in the root directory:
+```env
+# Database Configuration
+DB_PATH=/app/data/mcp-servers.db
+
+# Docker Configuration
+PUID=1000
+PGID=1000
+TZ=Etc/UTC
+```
+
+### Docker Commands
 
 ```bash
-# For Code Assistant
-npx @modelcontextprotocol/inspector gui code-assistant/build/index.js
+# Start all services
+docker-compose up -d
 
-# For Project Management
-npx @modelcontextprotocol/inspector gui project-management/build/index.js
+# Stop all services
+docker-compose down
+
+# View logs
+docker-compose logs -f
+
+# Rebuild containers
+docker-compose build
+
+# Reset database (WARNING: Deletes all data)
+./cleanup.sh
+./setup.sh
 ```
 
-## Database Schema
+## Test Data
 
-See `init-db.sql` for the complete database schema. Key features:
+The setup includes sample data for testing:
 
-- Foreign key constraints for data integrity
-- Timestamps for all records
-- Proper indexing for performance
-- JSON storage for complex data (metrics, forecasts)
+1. Project:
+- Mobile App Development project
+- Active sprint with tasks
+- Team with members and skills
 
-## Error Handling
+2. Tasks:
+- Authentication Flow (In Progress)
+- Navigation Menu (Blocked)
+- Settings Screen (Todo)
 
-The shared database connection provides:
+3. Metrics:
+- Sprint burndown data
+- Resource utilization
+- Skill demand/availability
 
-- Connection pooling
-- Automatic reconnection
-- Error propagation
-- Type safety with TypeScript
-- SQL injection prevention
+## Adding New MCP Servers
+
+1. Create a new directory for your server
+2. Add dependencies on shared module:
+```json
+{
+  "dependencies": {
+    "@mcp-servers/shared": "file:../shared"
+  }
+}
+```
+3. Import and use shared database connection:
+```typescript
+import { db } from '@mcp-servers/shared';
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
+
+## Cleanup
+
+To reset the environment:
+```bash
+./cleanup.sh
+```
+
+This will:
+- Stop and remove Docker containers
+- Remove database files
+- Clean build artifacts
+- Remove node_modules
+
+## License
+
+MIT
