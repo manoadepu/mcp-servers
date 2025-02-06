@@ -1,192 +1,211 @@
-# Database Setup Guide
+# MCP Servers Database
 
-This guide explains how to set up and manage the SQLite databases for both development and testing environments.
-
-## Prerequisites
-
-- SQLite3 command-line tool
-- Bash shell
+## Overview
+The MCP Servers project uses SQLite as its database engine, with schemas organized by server functionality. The database setup is containerized using Docker for consistent development and deployment environments.
 
 ## Directory Structure
-
 ```
-shared/
-├── database/
-│   ├── schema/
-│   │   ├── init.sql
-│   │   ├── code-assistant.sql
-│   │   └── project-management.sql
-│   └── migrations/
-│       ├── 20250301000000_create_migrations_table.sql
-│       └── 20250301000001_insert_test_data.sql
-├── scripts/
-│   └── setup-db.sh
-└── data/
-    ├── mcp-servers.db
-    └── test.db
+shared/database/
+├── schema/                 # Database schema definitions
+│   ├── init.sql           # Main initialization script
+│   ├── code-assistant.sql # Code Assistant schema
+│   └── project-management.sql # Project Management schema
+├── migrations/            # Database migrations
+│   ├── 20250301000000_create_migrations_table.sql
+│   ├── 20250301000001_insert_test_data.sql
+│   ├── 20250301000002_insert_comprehensive_test_data.sql
+│   └── 20250301000003_insert_task_data.sql
+└── README.md             # This file
 ```
 
-## Quick Start
+## Database Setup
 
-1. Make the setup script executable:
+### Using Docker
+1. Start the database container:
 ```bash
-chmod +x shared/scripts/setup-db.sh
-```
-
-2. Run the setup script:
-```bash
-./shared/scripts/setup-db.sh
+docker-compose up -d
 ```
 
 This will:
-- Create both production and test databases
-- Initialize the schema for both databases
-- Insert test data into the test database
+- Create a SQLite database in the mounted data volume
+- Initialize the schema using init.sql
+- Start SQLite browser UI at http://localhost:3001
 
-## Manual Setup Steps
-
-If you prefer to set up the databases manually, follow these steps:
-
-1. Create the data directory:
+### Manual Setup
+1. Create database:
 ```bash
-mkdir -p data
+sqlite3 data/mcp-servers.db
 ```
 
-2. Initialize the production database:
+2. Initialize schema:
 ```bash
-sqlite3 data/mcp-servers.db <<EOF
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-
-$(cat shared/database/schema/project-management.sql)
-$(cat shared/database/schema/code-assistant.sql)
-EOF
+cd shared/database/schema
+sqlite3 ../../data/mcp-servers.db < init.sql
 ```
 
-3. Initialize the test database:
-```bash
-sqlite3 data/test.db <<EOF
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
+## Schema Organization
 
-$(cat shared/database/schema/project-management.sql)
-$(cat shared/database/schema/code-assistant.sql)
-EOF
+### Code Assistant Schema
+- repositories: Git repository information
+- commits: Git commit tracking
+- file_metrics: Code analysis metrics
+- file_changes: Change tracking
+- hotspots: Frequently changed files
+- pull_requests: PR tracking and analysis
+
+### Project Management Schema
+- projects: Project information
+- teams: Team management
+- team_members: Team member details
+- sprints: Sprint tracking
+- tasks: Task management
+- task_dependencies: Task relationships
+- task_labels: Task categorization
+- sprint_metrics: Sprint performance
+- resource_metrics: Resource utilization
+
+## Database Configuration
+The database uses the following SQLite settings (configured in init.sql):
+```sql
+PRAGMA foreign_keys = ON;      -- Enforce referential integrity
+PRAGMA journal_mode = WAL;     -- Write-Ahead Logging for better concurrency
+PRAGMA synchronous = NORMAL;   -- Balance between safety and performance
 ```
 
-4. Insert test data (for test database only):
-```bash
-sqlite3 data/test.db <<EOF
-BEGIN TRANSACTION;
+## Working with Migrations
 
-INSERT INTO projects (id, name, description, status, start_date, target_date)
-VALUES (
-    'proj-001',
-    'Mobile App Development',
-    'Cross-platform mobile app development project',
-    'ACTIVE',
-    '2025-01-01',
-    '2025-06-30'
+### Migration Files
+- Located in shared/database/migrations/
+- Named with timestamp prefix for ordering
+- Each migration is atomic and reversible
+
+### Running Migrations
+1. Using CLI tool:
+```bash
+npm run migrate
+```
+
+2. Using TypeScript API:
+```typescript
+import { runMigrations } from 'shared/src/migrations';
+await runMigrations();
+```
+
+## Test Data
+
+### Loading Test Data
+Test data is loaded through migrations:
+```bash
+# Load basic test data
+npm run migrate -- --to 20250301000001
+
+# Load comprehensive test data
+npm run migrate -- --to 20250301000002
+
+# Load task-specific data
+npm run migrate -- --to 20250301000003
+```
+
+### Test Data Contents
+1. Basic Test Data (20250301000001):
+   - Sample repositories
+   - Basic commits and metrics
+   - Example projects and teams
+
+2. Comprehensive Test Data (20250301000002):
+   - Extended repository data
+   - Complex code metrics
+   - Project scenarios
+
+3. Task Data (20250301000003):
+   - Sprint examples
+   - Task relationships
+   - Resource allocations
+
+## Development Guidelines
+
+### Adding New Tables
+1. Create migration file:
+```sql
+-- YYYYMMDDHHMMSS_description.sql
+CREATE TABLE new_table (
+    id INTEGER PRIMARY KEY,
+    ...
 );
-
-INSERT INTO teams (id, project_id, name, capacity)
-VALUES (
-    'team-001',
-    'proj-001',
-    'Mobile Team',
-    40
-);
-
-INSERT INTO team_members (id, team_id, name, role, skills, availability)
-VALUES 
-(
-    'user-001',
-    'team-001',
-    'John Doe',
-    'Senior Developer',
-    '{"technical":["React Native","TypeScript","Node.js"],"domain":["Mobile Development","API Integration"],"soft":["Leadership","Communication"]}',
-    100
-),
-(
-    'user-002',
-    'team-001',
-    'Jane Smith',
-    'UI/UX Designer',
-    '{"technical":["Figma","Adobe XD","CSS"],"domain":["Mobile Design","User Research"],"soft":["Creativity","Collaboration"]}',
-    80
-);
-
-INSERT INTO sprints (id, project_id, name, status, start_date, end_date, goals)
-VALUES (
-    'sprint-001',
-    'proj-001',
-    'Sprint 1',
-    'ACTIVE',
-    '2025-01-15',
-    '2025-01-29',
-    '{"objectives":["Complete user authentication","Implement basic navigation"],"successCriteria":["All unit tests passing","UI/UX review approved"]}'
-);
-
-INSERT INTO sprint_metrics (id, sprint_id, total_points, completed_points, remaining_points, velocity, burndown_data)
-VALUES (
-    'metrics-001',
-    'sprint-001',
-    10,
-    3,
-    7,
-    15,
-    '{"dataPoints":[{"date":"2025-01-15","remainingPoints":10,"completedPoints":0},{"date":"2025-01-20","remainingPoints":7,"completedPoints":3}],"idealLine":[{"date":"2025-01-15","expectedPoints":10},{"date":"2025-01-29","expectedPoints":0}]}'
-);
-
-COMMIT;
-EOF
 ```
 
-## Running Tests
+2. Update schema file:
+- Add table definition to appropriate schema file
+- Add indexes if needed
+- Update this README
 
-The test suite uses its own database file (`test.db`) to avoid interfering with the production database. To run the tests:
+### Modifying Existing Tables
+1. Create migration file:
+```sql
+-- Add new column
+ALTER TABLE existing_table ADD COLUMN new_column TEXT;
 
-```bash
-cd shared
-npm test
+-- Create new index
+CREATE INDEX idx_name ON existing_table(column);
 ```
 
-The test setup will:
-1. Create a fresh test database if it doesn't exist
-2. Initialize the schema
-3. Insert test data
-4. Run the tests
-5. Clean up the test data
-
-## Database Files
-
-- `data/mcp-servers.db`: Production database
-- `data/test.db`: Test database
-
-Both databases use SQLite's Write-Ahead Logging (WAL) mode for better concurrency and reliability. This creates additional files with extensions `.db-shm` and `.db-wal` alongside the main database files.
-
-## Schema Updates
-
-When updating the schema:
-
-1. Create a new migration file in `shared/database/migrations/`
-2. Update the corresponding schema file in `shared/database/schema/`
-3. Run the setup script to apply changes:
-```bash
-./shared/scripts/setup-db.sh
-```
+2. Update schema file to reflect changes
 
 ## Troubleshooting
 
-If you encounter database issues:
+### Common Issues
 
-1. Stop any running processes that might be using the database
-2. Remove the database files:
+1. Database Locked
 ```bash
-rm -f data/*.db*
+# Reset WAL files
+sqlite3 data/mcp-servers.db "PRAGMA wal_checkpoint(TRUNCATE)"
 ```
-3. Run the setup script again:
+
+2. Migration Failed
 ```bash
-./shared/scripts/setup-db.sh
+# Check migration status
+sqlite3 data/mcp-servers.db "SELECT * FROM migrations"
+
+# Reset to specific migration
+npm run migrate -- --to YYYYMMDDHHMMSS
+```
+
+3. Corrupt Database
+```bash
+# Backup existing data
+sqlite3 data/mcp-servers.db ".backup 'backup.db'"
+
+# Recreate database
+rm data/mcp-servers.db*
+docker-compose restart
+```
+
+## Monitoring & Maintenance
+
+### Health Checks
+```sql
+-- Check database integrity
+PRAGMA integrity_check;
+
+-- Check foreign key constraints
+PRAGMA foreign_key_check;
+```
+
+### Performance Optimization
+```sql
+-- Analyze tables
+ANALYZE;
+
+-- Rebuild indexes
+REINDEX;
+
+-- Compact database
+VACUUM;
+```
+
+## Contributing
+1. Create migration for changes
+2. Update schema files
+3. Add tests in shared/src/__tests__/
+4. Update documentation
+5. Submit pull request

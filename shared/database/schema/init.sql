@@ -2,10 +2,10 @@
 -- This file combines schemas for all MCP servers
 
 -- Code Assistant Schema
-.read code-assistant.sql
+.read /app/schema/code-assistant.sql
 
 -- Project Management Schema
-.read project-management.sql
+.read /app/schema/project-management.sql
 
 -- Shared Indexes and Settings
 PRAGMA foreign_keys = ON;

@@ -12,6 +12,9 @@ WORKDIR /app
 # Copy schema files
 COPY shared/database/schema /app/schema
 
+# Copy migrations
+COPY shared/database/migrations /app/migrations
+
 # Copy setup script
 COPY docker/setup-db.sh /app/setup-db.sh
 

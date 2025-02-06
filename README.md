@@ -1,174 +1,128 @@
 # MCP Servers
 
-A collection of Model Context Protocol (MCP) servers with shared infrastructure.
+A collection of Model Context Protocol (MCP) servers that extend AI capabilities through specialized tools and resources.
+
+## Overview
+
+MCP Servers provide a standardized way to extend AI capabilities through specialized servers that offer tools and resources. Each server focuses on specific functionality while maintaining a consistent interface through the MCP protocol.
+
+## Servers
+
+### Code Assistant
+Code analysis and Git operations server providing:
+- Code complexity analysis
+- Pull request reviews
+- Change impact assessment
+- Security vulnerability detection
+
+### Project Management
+Project and resource management server offering:
+- Task tracking
+- Sprint management
+- Resource allocation
+- Project analytics
+
+### Notes Server
+Documentation and knowledge management server providing:
+- Documentation organization
+- Search capabilities
+- Content generation
+- Knowledge base management
+
+## Documentation
+
+- [Project Overview](project-details/overview.md) - High-level overview of the MCP servers project
+- [Technical Design](project-details/technical-design.md) - Detailed technical architecture and protocol specification
+- [Setup Guide](project-details/setup-guide.md) - Instructions for setting up and running MCP servers
+- [Development Guide](project-details/development-guide.md) - Guidelines for developing new MCP servers
+
+## Getting Started
+
+1. Clone the repository:
+```bash
+git clone https://github.com/your-org/mcp-servers.git
+cd mcp-servers
+```
+
+2. Install dependencies:
+```bash
+npm install
+npm run install-all
+```
+
+3. Set up environment:
+```bash
+cp .env.example .env
+# Configure environment variables
+```
+
+4. Start servers:
+```bash
+# Development mode
+npm run dev
+
+# Production mode
+npm start
+```
 
 ## Project Structure
 
 ```
 mcp-servers/
-├── docker/                    # Shared Docker configuration
-│   ├── Dockerfile            # Database container setup
-│   └── setup-db.sh           # Database initialization script
-├── docker-compose.yml        # Main compose file for all services
-├── shared/                   # Shared database and utilities
-│   ├── database/            # Database schemas and migrations
-│   │   ├── schema/         # Table definitions
-│   │   └── migrations/     # Database migrations
-│   └── src/                # Shared TypeScript code
-├── code-assistant/          # Code analysis MCP server
-└── project-management/      # Project management MCP server
+├── project-details/        # Project-wide documentation
+├── shared/                # Shared components and utilities
+├── code-assistant/        # Code analysis server
+├── project-management/    # Project management server
+├── notes-server/          # Documentation server
+└── docker/               # Docker configuration
 ```
-
-## Quick Start
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd mcp-servers
-```
-
-2. Run the setup script:
-```bash
-./setup.sh
-```
-
-This will:
-- Install dependencies for all projects
-- Build TypeScript code
-- Start the database containers
-- Run database migrations
-- Load test data
-
-3. Access the database:
-- SQLite Browser: http://localhost:3001
-- Database file: `./data/mcp-servers.db`
 
 ## Development
 
-### Database Structure
+### Creating a New Server
 
-The database is shared between all MCP servers and includes:
-
-1. Code Assistant Tables:
-- repositories: Store repository metadata
-- commits: Track git commit information
-- file_metrics: Store code complexity metrics
-- file_changes: Track file modifications
-- hotspots: Identify high-activity code areas
-- pull_requests: Manage PR data and impact analysis
-
-2. Project Management Tables:
-- projects: Project metadata and status
-- teams: Team organization and capacity
-- team_members: Team member details and skills
-- sprints: Sprint planning and tracking
-- tasks: Task management and assignments
-- task_dependencies: Task relationships
-- task_labels: Task categorization
-- sprint_metrics: Sprint performance tracking
-- resource_metrics: Resource utilization tracking
-
-### Database Migrations
-
-The shared module includes a migration system:
-
+1. Use the create-server tool:
 ```bash
-# Check migration status
-cd shared
-npm run migration:status
-
-# Create new migration
-npm run migration:create "description"
-
-# Apply pending migrations
-npm run migration:up
-
-# Rollback last migration
-npm run migration:down
+npx @modelcontextprotocol/create-server my-server
 ```
 
-### Running MCP Servers
-
-1. Code Assistant:
-```bash
-cd code-assistant
-npm run build
-npm start
-```
-
-2. Project Management:
-```bash
-cd project-management
-npm run build
-npm start
-```
-
-### Environment Variables
-
-Create a `.env` file in the root directory:
-```env
-# Database Configuration
-DB_PATH=/app/data/mcp-servers.db
-
-# Docker Configuration
-PUID=1000
-PGID=1000
-TZ=Etc/UTC
-```
-
-### Docker Commands
-
-```bash
-# Start all services
-docker-compose up -d
-
-# Stop all services
-docker-compose down
-
-# View logs
-docker-compose logs -f
-
-# Rebuild containers
-docker-compose build
-
-# Reset database (WARNING: Deletes all data)
-./cleanup.sh
-./setup.sh
-```
-
-## Test Data
-
-The setup includes sample data for testing:
-
-1. Project:
-- Mobile App Development project
-- Active sprint with tasks
-- Team with members and skills
-
-2. Tasks:
-- Authentication Flow (In Progress)
-- Navigation Menu (Blocked)
-- Settings Screen (Todo)
-
-3. Metrics:
-- Sprint burndown data
-- Resource utilization
-- Skill demand/availability
-
-## Adding New MCP Servers
-
-1. Create a new directory for your server
-2. Add dependencies on shared module:
-```json
-{
-  "dependencies": {
-    "@mcp-servers/shared": "file:../shared"
-  }
+2. Implement the MCP protocol:
+```typescript
+class MyServer extends BaseMCPServer {
+  // Implement server interfaces
 }
 ```
-3. Import and use shared database connection:
+
+3. Add tools and resources:
 ```typescript
-import { db } from '@mcp-servers/shared';
+// Add tools
+server.registerTool('my-tool', new MyTool());
+
+// Add resources
+server.registerResource('my-resource', new MyResource());
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Test specific server
+cd [server-directory]
+npm test
+```
+
+## Docker Support
+
+Build and run with Docker:
+
+```bash
+# Build containers
+docker-compose build
+
+# Start services
+docker-compose up -d
 ```
 
 ## Contributing
@@ -177,21 +131,8 @@ import { db } from '@mcp-servers/shared';
 2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
-5. Create a new Pull Request
-
-## Cleanup
-
-To reset the environment:
-```bash
-./cleanup.sh
-```
-
-This will:
-- Stop and remove Docker containers
-- Remove database files
-- Clean build artifacts
-- Remove node_modules
+5. Create a pull request
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

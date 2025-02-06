@@ -1,179 +1,287 @@
-# Project Assistant Overview
+# Code Assistant MCP Server
 
-## Vision
-Project Assistant is an AI-powered universal translator for software development workflows that revolutionizes how teams interact with their development tools. By providing a natural language interface that seamlessly integrates with existing tools, it eliminates the cognitive overhead of context-switching and tool-specific syntax, allowing developers to focus on what matters most - building great software.
+## Overview
+Code Assistant is an MCP server that provides intelligent code analysis and Git operations capabilities. It focuses on analyzing code complexity, reviewing pull requests, and providing actionable insights about code changes.
 
-Rather than replacing existing tools, Project Assistant serves as an intelligent layer that understands developer intent and orchestrates actions across multiple platforms, translating natural language requests into precise tool-specific operations. This integration-first approach preserves teams' existing investments while dramatically improving their productivity through intuitive interactions.
+## Core Capabilities
 
-## Core Value Proposition
+### 1. Code Analysis
+- Cyclomatic complexity measurement
+- Cognitive complexity analysis
+- Maintainability metrics
+- Performance impact assessment
+- Security vulnerability detection
 
-### 1. Natural Language Interface
-- Conversational interaction with all development tools
-- Context-aware command interpretation
-- Intelligent workflow automation
-- Cross-tool operation coordination
+### 2. Git Operations
+- Repository management
+- Branch operations
+- Commit analysis
+- PR review automation
+- Change impact analysis
 
-### 2. Universal Integration Layer
-- Seamless connection to existing tools
-- Preservation of current workflows
-- Real-time synchronization
-- Unified data access
+### 3. LLM Integration
+- PR summary generation
+- Code review suggestions
+- Impact assessment
+- Security implications analysis
 
-### 3. AI-Powered Intelligence
-- Smart workflow optimization
-- Predictive analytics
-- Pattern recognition
-- Automated insights
+## Features
 
-## Key Features
-
-### 1. Intelligent Workflow Translation
-```
-User: "Show me the security implications of recent changes in the auth service"
-Assistant: "Analyzing changes...
-- Found 3 PRs affecting authentication logic
-- Identified 2 dependency vulnerabilities
-- Test coverage is below security threshold
-Would you like me to create JIRA tickets for these issues?"
-```
-
-### 2. Cross-Tool Operations
-```
-User: "Create a new feature branch for implementing OAuth"
-Assistant: "I'll help with that:
-1. Creating branch 'feature/oauth-implementation'
-2. Setting up JIRA epic with subtasks
-3. Creating PR template with security checklist
-4. Updating project documentation
-Done! What would you like to work on first?"
-```
-
-### 3. Smart Analytics
-```
-User: "What's slowing down our PR reviews?"
-Assistant: "Based on analysis:
-1. Large PR sizes (avg 300+ lines)
-2. Limited reviewer availability
-3. Missing context in descriptions
-I can help set up automated PR splitting and reviewer rotation."
+### 1. Pull Request Analysis
+```typescript
+// Example PR analysis result
+{
+  "complexity": {
+    "before": { "cyclomatic": 45, "cognitive": 32 },
+    "after": { "cyclomatic": 38, "cognitive": 28 },
+    "delta": -11
+  },
+  "impact": {
+    "score": 65,
+    "level": "medium",
+    "factors": [
+      "Multiple file changes",
+      "API modifications",
+      "Test coverage impact"
+    ]
+  }
+}
 ```
 
-## System Architecture
+### 2. Code Complexity Analysis
+```typescript
+// Example complexity analysis
+{
+  "file": "src/service/auth.ts",
+  "metrics": {
+    "cyclomatic": 12,
+    "cognitive": 8,
+    "maintainability": 76
+  },
+  "hotspots": [
+    {
+      "line": 45,
+      "complexity": "high",
+      "suggestion": "Consider breaking down authentication logic"
+    }
+  ]
+}
+```
+
+### 3. Change Impact Assessment
+```typescript
+// Example impact assessment
+{
+  "changes": {
+    "files": 5,
+    "additions": 120,
+    "deletions": 85
+  },
+  "impact": {
+    "api": "moderate",
+    "performance": "low",
+    "security": "high"
+  },
+  "recommendations": [
+    "Review authentication changes",
+    "Add security tests",
+    "Update API documentation"
+  ]
+}
+```
+
+## Implementation
 
 ### 1. Core Components
 
-#### Natural Language Processing Engine
-- Intent recognition
-- Context management
-- Command translation
-- Response generation
+#### Analysis Engine
+- Complexity analyzers
+- Impact assessors
+- Pattern detectors
+- Metric collectors
 
-#### Integration Layer
-- Tool connectors
-- API management
-- State synchronization
-- Event handling
+#### Git Integration
+- Repository operations
+- Change tracking
+- Branch management
+- PR handling
 
-#### AI Processing Pipeline
-- Pattern analysis
-- Predictive modeling
-- Recommendation engine
-- Learning system
+#### LLM Pipeline
+- Content analysis
+- Summary generation
+- Suggestion creation
+- Impact assessment
 
-#### Data Management
-- Real-time processing
-- State management
-- History tracking
-- Analytics storage
+### 2. Tools Provided
 
-### 2. Technology Stack
+#### analyzeCode
+```typescript
+interface AnalyzeCodeInput {
+  path: string;
+  options?: {
+    complexity?: boolean;
+    security?: boolean;
+    performance?: boolean;
+  };
+}
+```
 
-#### Backend Infrastructure
-- TypeScript/Node.js runtime
-- MCP SDK integration
-- Machine learning pipeline
-- Real-time event processing
+#### analyzePR
+```typescript
+interface AnalyzePRInput {
+  prNumber: string;
+  options?: {
+    summaryType: 'brief' | 'detailed';
+    includeSuggestions: boolean;
+    securityCheck: boolean;
+  };
+}
+```
 
-#### Data Storage
-- SQLite for local data
-- PostgreSQL for production
-- Redis for caching
-- Time-series analytics
+#### getComplexityMetrics
+```typescript
+interface ComplexityMetricsInput {
+  files: string[];
+  threshold?: {
+    cyclomatic?: number;
+    cognitive?: number;
+  };
+}
+```
 
-#### External Integrations
-- Git providers (GitHub, GitLab)
-- Project management (JIRA, Trello)
-- CI/CD platforms
-- Code quality tools
+### 3. Resources Provided
 
-#### AI/ML Components
-- Natural language understanding
-- Pattern recognition
-- Predictive analytics
-- Recommendation systems
+#### complexity-report
+```
+complexity://[repo]/[branch]/report
+```
 
-## Implementation Strategy
+#### pr-analysis
+```
+pr://[repo]/[number]/analysis
+```
 
-### Phase 1: Foundation (1-2 months)
-- Natural language processing infrastructure
-- Core integration framework
-- Basic Git operations
-- Simple task management
+#### code-metrics
+```
+metrics://[repo]/[path]/current
+```
 
-### Phase 2: Intelligence (2-3 months)
-- Advanced language understanding
-- Cross-tool workflows
-- Smart recommendations
-- Pattern recognition
+## Integration
 
-### Phase 3: Advanced Features (2-3 months)
-- Custom workflow automation
-- Predictive analytics
-- Team collaboration
-- Performance optimization
+### 1. MCP Protocol Implementation
+```typescript
+class CodeAssistantServer extends BaseMCPServer {
+  tools = {
+    analyzeCode: new CodeAnalysisTool(),
+    analyzePR: new PRAnalysisTool(),
+    getComplexityMetrics: new ComplexityTool()
+  };
+  
+  resources = {
+    complexityReport: new ComplexityReportResource(),
+    prAnalysis: new PRAnalysisResource(),
+    codeMetrics: new CodeMetricsResource()
+  };
+}
+```
 
-### Phase 4: Enterprise (3-4 months)
-- Advanced security
-- Custom integrations
-- Compliance tools
-- Multi-project management
+### 2. Event Handling
+```typescript
+// Event subscriptions
+server.on('pr.created', async (pr) => {
+  const analysis = await analyzePR(pr.number);
+  await notifyReviewers(analysis);
+});
 
-## Success Metrics
+server.on('commit.pushed', async (commit) => {
+  const impact = await analyzeCommitImpact(commit.hash);
+  await updateMetrics(impact);
+});
+```
 
-### 1. Developer Productivity
-- Reduced context switching time
-- Faster task completion
-- Improved code quality
-- Better documentation
+### 3. Caching Strategy
+```typescript
+// Cache configuration
+const cache = new ProviderCache({
+  namespace: 'code-assistant',
+  ttl: 3600,
+  invalidateOn: [
+    'commit.new',
+    'pr.updated',
+    'branch.changed'
+  ]
+});
+```
 
-### 2. Team Efficiency
-- Streamlined workflows
-- Better resource allocation
-- Reduced bottlenecks
-- Improved collaboration
+## Configuration
 
-### 3. Project Health
-- Higher code quality
-- Better security compliance
-- Reduced technical debt
-- Faster delivery times
+### 1. Environment Variables
+```env
+# Analysis Configuration
+COMPLEXITY_THRESHOLD=10
+COGNITIVE_THRESHOLD=15
+MAINTAINABILITY_THRESHOLD=70
 
-## Target Users
+# Git Configuration
+GIT_DEFAULT_BRANCH=main
+GIT_PR_FETCH_LIMIT=100
+GIT_CACHE_TTL=3600
 
-### 1. Development Teams
-- Software engineers
-- Team leads
-- DevOps engineers
-- QA specialists
+# LLM Configuration
+LLM_MODEL=gpt-4
+LLM_MAX_TOKENS=2000
+LLM_TEMPERATURE=0.1
+```
 
-### 2. Project Management
-- Project managers
-- Scrum masters
-- Product owners
-- Technical leads
+### 2. Feature Flags
+```typescript
+const features = {
+  complexityAnalysis: true,
+  securityScanning: true,
+  prAutomation: true,
+  impactAssessment: true,
+  suggestionGeneration: true
+};
+```
 
-### 3. Organizations
-- Software companies
-- Development agencies
-- Enterprise IT departments
-- Open source projects
+### 3. Performance Tuning
+```typescript
+const performance = {
+  maxConcurrentAnalysis: 5,
+  cacheSize: '1GB',
+  batchSize: 100,
+  timeout: 30000
+};
+```
+
+## Usage Examples
+
+### 1. Analyze Pull Request
+```typescript
+const result = await server.executeTool('analyzePR', {
+  prNumber: 'PR-123',
+  options: {
+    summaryType: 'detailed',
+    includeSuggestions: true
+  }
+});
+```
+
+### 2. Get Complexity Metrics
+```typescript
+const metrics = await server.executeTool('getComplexityMetrics', {
+  files: ['src/auth/**/*.ts'],
+  threshold: {
+    cyclomatic: 10,
+    cognitive: 15
+  }
+});
+```
+
+### 3. Generate PR Summary
+```typescript
+const summary = await server.executeTool('generatePRSummary', {
+  prNumber: 'PR-123',
+  format: 'markdown',
+  sections: ['changes', 'impact', 'suggestions']
+});

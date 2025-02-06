@@ -9,46 +9,91 @@ TEST_DB_PATH="$SCRIPT_DIR/../../data/test.db"
 SCHEMA_DIR="$SCRIPT_DIR/../database/schema"
 MIGRATIONS_DIR="$SCRIPT_DIR/../database/migrations"
 
-echo "Initializing Production database at $PROD_DB_PATH"
+echo "Setting up databases..."
 
-# Drop and initialize production database
-sqlite3 "$PROD_DB_PATH" << EOF
+# Function to initialize a database
+init_database() {
+    local db_path=$1
+    local db_name=$2
+    
+    echo "Initializing $db_name database at $db_path"
+    
+    # Create database directory if it doesn't exist
+    mkdir -p "$(dirname "$db_path")"
+    
+    # Drop existing database if it exists
+    rm -f "$db_path"
+    
+    # Initialize database with schema
+    sqlite3 "$db_path" << EOF
 PRAGMA journal_mode=WAL;
-DROP TABLE IF EXISTS task_dependencies;
-DROP TABLE IF EXISTS task_labels;
-DROP TABLE IF EXISTS tasks;
-DROP TABLE IF EXISTS sprint_metrics;
-DROP TABLE IF EXISTS sprints;
-DROP TABLE IF EXISTS team_members;
-DROP TABLE IF EXISTS teams;
-DROP TABLE IF EXISTS projects;
-.read ${SCHEMA_DIR}/project-management.sql
+PRAGMA foreign_keys=ON;
+PRAGMA synchronous=NORMAL;
+
+-- Initialize schema using combined init.sql
+.read ${SCHEMA_DIR}/init.sql
 EOF
-echo "Production database initialized successfully"
+    
+    if [ $? -eq 0 ]; then
+        echo "$db_name database initialized successfully"
+    else
+        echo "Error initializing $db_name database"
+        exit 1
+    fi
+}
 
-echo "Initializing Test database at $TEST_DB_PATH"
+# Function to apply migrations
+apply_migrations() {
+    local db_path=$1
+    local db_name=$2
+    
+    echo "Applying migrations to $db_name database"
+    
+    # Apply migrations in order
+    for migration in "$MIGRATIONS_DIR"/*.sql; do
+        echo "Applying migration: $(basename "$migration")"
+        sqlite3 "$db_path" ".read $migration"
+        if [ $? -ne 0 ]; then
+            echo "Error applying migration: $(basename "$migration")"
+            exit 1
+        fi
+    done
+    
+    echo "Migrations applied successfully to $db_name database"
+}
 
-# Drop and initialize test database
-sqlite3 "$TEST_DB_PATH" << EOF
-PRAGMA journal_mode=WAL;
-DROP TABLE IF EXISTS task_dependencies;
-DROP TABLE IF EXISTS task_labels;
-DROP TABLE IF EXISTS tasks;
-DROP TABLE IF EXISTS sprint_metrics;
-DROP TABLE IF EXISTS sprints;
-DROP TABLE IF EXISTS team_members;
-DROP TABLE IF EXISTS teams;
-DROP TABLE IF EXISTS projects;
-.read ${SCHEMA_DIR}/project-management.sql
-EOF
-echo "Test database initialized successfully"
+# Initialize production database
+init_database "$PROD_DB_PATH" "Production"
 
-echo "Inserting test data into database"
+# Initialize test database
+init_database "$TEST_DB_PATH" "Test"
 
-# Apply only the comprehensive test data and task data
-sqlite3 "$TEST_DB_PATH" ".read $MIGRATIONS_DIR/20250301000002_insert_comprehensive_test_data.sql"
-sqlite3 "$TEST_DB_PATH" ".read $MIGRATIONS_DIR/20250301000003_insert_task_data.sql"
-sqlite3 "$PROD_DB_PATH" ".read $MIGRATIONS_DIR/20250301000002_insert_comprehensive_test_data.sql"
-sqlite3 "$PROD_DB_PATH" ".read $MIGRATIONS_DIR/20250301000003_insert_task_data.sql"
+# Apply migrations to production database
+apply_migrations "$PROD_DB_PATH" "Production"
 
-echo "Test data inserted successfully"
+# Apply migrations to test database
+apply_migrations "$TEST_DB_PATH" "Test"
+
+echo "Database setup completed successfully"
+
+# Verify setup
+echo "Verifying database setup..."
+
+check_database() {
+    local db_path=$1
+    local db_name=$2
+    
+    echo "Checking $db_name database integrity"
+    sqlite3 "$db_path" "PRAGMA integrity_check;"
+    
+    echo "Checking $db_name database foreign keys"
+    sqlite3 "$db_path" "PRAGMA foreign_key_check;"
+    
+    echo "Checking $db_name database tables"
+    sqlite3 "$db_path" ".tables"
+}
+
+check_database "$PROD_DB_PATH" "Production"
+check_database "$TEST_DB_PATH" "Test"
+
+echo "Database verification completed"
